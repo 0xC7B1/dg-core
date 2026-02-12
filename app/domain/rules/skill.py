@@ -12,6 +12,7 @@ from app.modules.dice import roller
 
 async def handle_skill_check(
     db: AsyncSession,
+    game_id: str,
     session_id: str,
     player_id: str,
     ghost_id: str,
@@ -40,6 +41,7 @@ async def handle_skill_check(
     await timeline.append_event(
         db,
         session_id=session_id,
+        game_id=game_id,
         event_type="skill_check",
         actor_id=player_id,
         data={
@@ -72,6 +74,7 @@ async def handle_skill_check(
 
 async def handle_reroll(
     db: AsyncSession,
+    game_id: str,
     session_id: str,
     player_id: str,
     ghost_id: str,
@@ -123,6 +126,7 @@ async def handle_reroll(
     await timeline.append_event(
         db,
         session_id=session_id,
+        game_id=game_id,
         event_type="use_print_ability",
         actor_id=player_id,
         data={"ghost_id": ghost_id, "ability_id": ability_id},

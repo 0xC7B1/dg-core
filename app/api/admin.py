@@ -1,4 +1,4 @@
-"""Admin API — session and character management."""
+"""Admin API — game, region, location, and character management."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import character, session as session_mod
+from app.domain import character, game as game_mod, region as region_mod
 from app.infra.db import get_db
 from app.modules.rag.index import index_document
 
@@ -18,13 +18,13 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # --- Request schemas ---
 
-class CreateSessionRequest(BaseModel):
+class CreateGameRequest(BaseModel):
     name: str
     created_by: str  # player_id
     config: dict | None = None
 
 
-class UpdateSessionRequest(BaseModel):
+class UpdateGameRequest(BaseModel):
     name: str | None = None
     status: str | None = None
     config: dict | None = None
@@ -35,9 +35,25 @@ class AddPlayerRequest(BaseModel):
     role: str = "PL"
 
 
+class CreateRegionRequest(BaseModel):
+    code: str
+    name: str
+    description: str | None = None
+    metadata: dict | None = None
+    sort_order: int = 0
+
+
+class CreateLocationRequest(BaseModel):
+    name: str
+    description: str | None = None
+    content: str | None = None
+    metadata: dict | None = None
+    sort_order: int = 0
+
+
 class CreatePatientRequest(BaseModel):
     player_id: str
-    session_id: str
+    game_id: str
     name: str
     soul_color: str
     gender: str | None = None
@@ -51,7 +67,7 @@ class CreatePatientRequest(BaseModel):
 class CreateGhostRequest(BaseModel):
     patient_id: str
     creator_player_id: str
-    session_id: str
+    game_id: str
     name: str
     soul_color: str
     appearance: str | None = None
@@ -83,7 +99,7 @@ class RAGUploadRequest(BaseModel):
     metadata: dict | None = None
 
 
-# --- Endpoints ---
+# --- Player endpoints ---
 
 @router.post("/players")
 async def create_player(
@@ -108,43 +124,114 @@ async def create_player(
     return {"player_id": player.id, "api_key": api_key}
 
 
-@router.post("/sessions")
-async def create_session(
-    req: CreateSessionRequest,
+# --- Game endpoints ---
+
+@router.post("/games")
+async def create_game(
+    req: CreateGameRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    s = await session_mod.create_session(db, req.name, req.created_by, req.config)
-    return {"session_id": s.id, "name": s.name, "status": s.status}
+    game = await game_mod.create_game(db, req.name, req.created_by, req.config)
+    return {"game_id": game.id, "name": game.name, "status": game.status}
 
 
-@router.put("/sessions/{session_id}")
-async def update_session(
-    session_id: str,
-    req: UpdateSessionRequest,
+@router.put("/games/{game_id}")
+async def update_game(
+    game_id: str,
+    req: UpdateGameRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    s = await session_mod.get_session(db, session_id)
-    if s is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    game = await game_mod.get_game(db, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
     if req.name is not None:
-        s.name = req.name
+        game.name = req.name
     if req.status is not None:
-        s.status = req.status
+        game.status = req.status
     if req.config is not None:
-        s.config_json = json.dumps(req.config)
+        game.config_json = json.dumps(req.config)
     await db.flush()
-    return {"session_id": s.id, "name": s.name, "status": s.status}
+    return {"game_id": game.id, "name": game.name, "status": game.status}
 
 
-@router.post("/sessions/{session_id}/players")
-async def add_player_to_session(
-    session_id: str,
+@router.post("/games/{game_id}/players")
+async def add_player_to_game(
+    game_id: str,
     req: AddPlayerRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    link = await session_mod.join_session(db, session_id, req.player_id, req.role)
-    return {"session_id": session_id, "player_id": req.player_id, "role": link.role}
+    link = await game_mod.join_game(db, game_id, req.player_id, req.role)
+    return {"game_id": game_id, "player_id": req.player_id, "role": link.role}
 
+
+# --- Region endpoints ---
+
+@router.post("/games/{game_id}/regions")
+async def create_region(
+    game_id: str,
+    req: CreateRegionRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    region = await region_mod.create_region(
+        db, game_id=game_id, name=req.name, code=req.code,
+        description=req.description, metadata=req.metadata, sort_order=req.sort_order,
+    )
+    return {
+        "region_id": region.id, "game_id": game_id,
+        "code": region.code, "name": region.name,
+    }
+
+
+@router.get("/games/{game_id}/regions")
+async def list_regions(
+    game_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    regions = await region_mod.get_regions(db, game_id)
+    return {
+        "game_id": game_id,
+        "regions": [
+            {"id": r.id, "code": r.code, "name": r.name, "description": r.description}
+            for r in regions
+        ],
+    }
+
+
+# --- Location endpoints ---
+
+@router.post("/regions/{region_id}/locations")
+async def create_location(
+    region_id: str,
+    req: CreateLocationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    location = await region_mod.create_location(
+        db, region_id=region_id, name=req.name,
+        description=req.description, content=req.content,
+        metadata=req.metadata, sort_order=req.sort_order,
+    )
+    return {
+        "location_id": location.id, "region_id": region_id,
+        "name": location.name,
+    }
+
+
+@router.get("/regions/{region_id}/locations")
+async def list_locations(
+    region_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    locations = await region_mod.get_locations(db, region_id)
+    return {
+        "region_id": region_id,
+        "locations": [
+            {"id": loc.id, "name": loc.name, "description": loc.description}
+            for loc in locations
+        ],
+    }
+
+
+# --- Character endpoints ---
 
 @router.post("/characters/patient")
 async def create_patient(
@@ -154,7 +241,7 @@ async def create_patient(
     patient = await character.create_patient(
         db,
         player_id=req.player_id,
-        session_id=req.session_id,
+        game_id=req.game_id,
         name=req.name,
         soul_color=req.soul_color,
         gender=req.gender,
@@ -177,7 +264,7 @@ async def create_ghost(
         db,
         patient_id=req.patient_id,
         creator_player_id=req.creator_player_id,
-        session_id=req.session_id,
+        game_id=req.game_id,
         name=req.name,
         soul_color=req.soul_color,
         appearance=req.appearance,
@@ -242,6 +329,8 @@ async def get_character(
 
     raise HTTPException(status_code=404, detail="Character not found")
 
+
+# --- RAG endpoint ---
 
 @router.post("/rag/upload")
 async def upload_rag_document(req: RAGUploadRequest) -> dict:

@@ -12,6 +12,7 @@ from app.modules.dice import roller
 
 async def handle_attack(
     db: AsyncSession,
+    game_id: str,
     session_id: str,
     player_id: str,
     attacker_ghost_id: str,
@@ -89,6 +90,7 @@ async def handle_attack(
     await timeline.append_event(
         db,
         session_id=session_id,
+        game_id=game_id,
         event_type="attack",
         actor_id=player_id,
         data={
@@ -116,6 +118,7 @@ async def handle_attack(
 
 async def handle_defend(
     db: AsyncSession,
+    game_id: str,
     session_id: str,
     player_id: str,
     defender_ghost_id: str,
@@ -150,6 +153,7 @@ async def handle_defend(
     await timeline.append_event(
         db,
         session_id=session_id,
+        game_id=game_id,
         event_type="defend",
         actor_id=player_id,
         data={"defender_ghost_id": defender_ghost_id, "color_used": color_used},

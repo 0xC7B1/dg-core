@@ -10,7 +10,7 @@
 # 安装依赖
 uv sync --extra dev
 
-# 运行测试（15 个，内存 SQLite，无需外部服务）
+# 运行测试（16 个，内存 SQLite，无需外部服务）
 pytest -v
 
 # 启动开发服务器
@@ -28,23 +28,24 @@ dg-core/
 ├── app/
 │   ├── main.py              # FastAPI 入口
 │   ├── api/                  # HTTP 路由
-│   │   ├── admin.py          # 管理 API (Player/Session/Character CRUD)
+│   │   ├── admin.py          # 管理 API (Player/Game/Region/Character CRUD)
 │   │   ├── bot.py            # 游戏 API (事件提交 + 查询)
 │   │   └── web.py            # WebSocket (预留)
 │   ├── domain/               # 核心领域逻辑
 │   │   ├── dispatcher.py     # 事件分发器（唯一入口）
-│   │   ├── session.py        # 会话管理
+│   │   ├── game.py           # 游戏管理 (Game 生命周期 + flags)
+│   │   ├── session.py        # 跑团活动管理 (Session 生命周期)
+│   │   ├── region.py         # 地区/地点管理 + 玩家位置
 │   │   ├── character.py      # 角色管理 + CMYK helpers
 │   │   ├── timeline.py       # 时间线
-│   │   ├── world.py          # 世界状态
 │   │   ├── context.py        # LLM 上下文组装
 │   │   └── rules/            # 游戏规则
 │   │       ├── skill.py      # 技能检定
 │   │       ├── combat.py     # 战斗流程
 │   │       └── narration.py  # LLM 叙述生成
 │   ├── models/               # 数据模型
-│   │   ├── db_models.py      # 9 个 ORM 表
-│   │   ├── event.py          # 17 种事件 (discriminated union)
+│   │   ├── db_models.py      # 10 个 ORM 表
+│   │   ├── event.py          # 19 种事件 (discriminated union)
 │   │   └── result.py         # EngineResult
 │   ├── modules/              # 可插拔模块
 │   │   ├── llm/              # LLM (OpenAI/Anthropic/Mock)
@@ -55,11 +56,27 @@ dg-core/
 │       ├── config.py         # Pydantic Settings
 │       ├── db.py             # 异步数据库连接
 │       └── cache.py          # 内存缓存
-├── tests/                    # 测试 (15 个)
+├── tests/                    # 测试 (16 个)
 ├── alembic/                  # 数据库迁移
 ├── docs/                     # 规范文档
 ├── pyproject.toml
 └── .env.example
+```
+
+## 数据模型层级
+
+```
+Player (独立账号)
+  ├──(N:M)── GamePlayer ──(N:M)── Game (一局游戏)
+  │              ├─ current_region ──────├── Region[] (A/B/C/D)
+  │              └─ current_location ───►│     └── Location[]
+  │                                      │
+  └── Patient[] ──(game_id FK)──────────►├── Patient[] ──(1:1)── Ghost
+                                         │                        ├── PrintAbility[]
+                                         │                        └── ColorFragment[]
+                                         │
+                                         └── Session[] (单次跑团活动)
+                                               └── TimelineEvent[]
 ```
 
 ## 配置
@@ -86,9 +103,13 @@ dg-core/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/admin/players` | 创建玩家 |
-| POST | `/api/admin/sessions` | 创建会话 |
-| PUT | `/api/admin/sessions/{id}` | 更新会话 |
-| POST | `/api/admin/sessions/{id}/players` | 添加玩家到会话 |
+| POST | `/api/admin/games` | 创建游戏 |
+| PUT | `/api/admin/games/{id}` | 更新游戏 |
+| POST | `/api/admin/games/{id}/players` | 添加玩家到游戏 |
+| POST | `/api/admin/games/{id}/regions` | 创建地区 |
+| GET | `/api/admin/games/{id}/regions` | 查询地区列表 |
+| POST | `/api/admin/regions/{id}/locations` | 创建地点 |
+| GET | `/api/admin/regions/{id}/locations` | 查询地点列表 |
 | POST | `/api/admin/characters/patient` | 创建褪色症患者 |
 | POST | `/api/admin/characters/ghost` | 创建电子幽灵 |
 | GET | `/api/admin/characters/{id}` | 查询角色 |
@@ -99,9 +120,9 @@ dg-core/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/bot/events` | 提交游戏事件（核心接口） |
-| GET | `/api/bot/sessions/{id}` | 查询会话信息 |
-| GET | `/api/bot/sessions/{id}/state` | 查询世界状态 |
-| GET | `/api/bot/sessions/{id}/timeline` | 查询事件时间线 |
+| GET | `/api/bot/games/{id}` | 查询游戏信息 |
+| GET | `/api/bot/sessions/{id}/timeline` | 查询活动时间线 |
+| GET | `/api/bot/games/{id}/timeline` | 查询游戏全局时间线 |
 
 ### 事件类型
 
@@ -109,21 +130,23 @@ dg-core/
 
 | 分类 | event_type | 说明 |
 |------|------------|------|
-| 系统 | `session_start` / `session_end` | 会话控制 |
-| 系统 | `player_join` / `player_leave` | 玩家进出 |
+| 游戏生命周期 | `game_start` / `game_end` | 游戏控制 |
+| 游戏生命周期 | `player_join` / `player_leave` | 玩家进出 |
+| 跑团活动 | `session_start` / `session_end` | 跑团活动控制 |
 | 行动 | `skill_check` | CMYK 技能检定 |
 | 行动 | `explore` | 探索区域 |
 | 战斗 | `attack` / `defend` | 攻击 / 防御 |
-| 战斗 | `use_print_ability` / `reroll` | 使用能力 / 重投 |
+| 战斗 | `use_print_ability` | 使用能力 |
 | 通信 | `initiate_comm` / `download_ability` / `deep_scan` / `attempt_seize` | 玩家间数据交换 |
-| 状态 | `apply_fragment` / `hp_change` / `sector_transition` | 状态变更 |
+| 状态 | `apply_fragment` / `hp_change` | 属性变更 |
+| 状态 | `region_transition` / `location_transition` | 位置移动 |
 
 ## 测试
 
 ```bash
-pytest                       # 全部 15 个测试
+pytest                       # 全部 16 个测试
 pytest tests/test_dice.py    # 骰子单元测试 (8)
-pytest tests/test_api.py     # API 集成测试 (6)
+pytest tests/test_api.py     # API 集成测试 (7)
 pytest tests/test_e2e.py     # 端到端场景测试 (1)
 ```
 
