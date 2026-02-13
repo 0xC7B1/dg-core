@@ -12,6 +12,8 @@ build/
 
 # Environment variables
 .env
+.env.prod
+.env.dev
 
 # Database
 *.db
@@ -26,6 +28,9 @@ alembic/versions/__pycache__/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Ruff
+.ruff-cache/
 
 # IDE
 .vscode/
