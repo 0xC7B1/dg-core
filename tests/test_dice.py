@@ -1,6 +1,5 @@
 """Unit tests for the CMYK dice roller."""
 
-import pytest
 
 from app.modules.dice.roller import DiceRoll, reroll, roll
 
