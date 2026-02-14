@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import version, PackageNotFoundError
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 from app.admin import setup_admin
 from app.api import admin, auth, bot, web
@@ -28,6 +29,57 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+
+def custom_openapi() -> dict:  # type: ignore[no-untyped-def]
+    """Add security schemes to OpenAPI schema."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title="dg-core",
+        version=__version__,
+        description="Digital Ghost World Engine — TRPG game engine service",
+        routes=app.routes,
+    )
+    
+    # Define security schemes (preserve any existing ones)
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    
+    if "securitySchemes" not in openapi_schema["components"]:
+        openapi_schema["components"]["securitySchemes"] = {}
+    
+    openapi_schema["components"]["securitySchemes"].update({
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "JWT access token from /api/auth/register or login endpoints",
+        },
+        "apiKey": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "API key for bot clients (64-char hex)",
+        },
+    })
+    
+    # For bot endpoints, add apiKey or bearerAuth to security if not already present
+    for path, path_item in openapi_schema.get("paths", {}).items():
+        if path.startswith("/api/bot"):
+            for method, operation in path_item.items():
+                if isinstance(operation, dict) and "security" not in operation:
+                    operation["security"] = [
+                        {"bearerAuth": []},
+                        {"apiKey": []},
+                    ]
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 app.include_router(auth.router)
 app.include_router(admin.router)
