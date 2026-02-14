@@ -224,3 +224,118 @@ async def test_login_nonexistent_user(client: AsyncClient):
         "password": "anything",
     })
     assert resp.status_code == 401
+
+
+# --- Resolve platform tests ---
+
+
+@pytest.mark.asyncio
+async def test_resolve_platform_success(client: AsyncClient):
+    """Bot resolves a known platform identity to user_id."""
+    bot = await register_user(client, "BotService", "test", "bot_001")
+    player = await register_user(client, "Player1", "qq", "resolve_001")
+    resp = await client.post("/api/auth/resolve-platform", json={
+        "platform": "qq",
+        "platform_uid": "resolve_001",
+    }, headers={"X-API-Key": bot["api_key"]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == player["user_id"]
+    assert data["username"] == "Player1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_platform_not_found(client: AsyncClient):
+    """Resolve unknown platform identity returns 404."""
+    bot = await register_user(client, "BotResolve", "test", "botres_001")
+    resp = await client.post("/api/auth/resolve-platform", json={
+        "platform": "qq",
+        "platform_uid": "nonexistent",
+    }, headers=bot["headers"])
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_resolve_platform_no_auth(client: AsyncClient):
+    """Resolve platform without auth returns 401."""
+    resp = await client.post("/api/auth/resolve-platform", json={
+        "platform": "qq",
+        "platform_uid": "any",
+    })
+    assert resp.status_code == 401
+
+
+# --- API key regeneration tests ---
+
+
+@pytest.mark.asyncio
+async def test_regenerate_api_key_via_jwt(client: AsyncClient):
+    """Regenerate API key via JWT auth. Old key invalidated, new key works."""
+    user = await register_user(client, "RegenJwt", "test", "regen_001")
+    old_key = user["api_key"]
+
+    # Regenerate via JWT
+    resp = await client.post("/api/auth/regenerate-api-key",
+                             headers=user["headers"])
+    assert resp.status_code == 200
+    new_key = resp.json()["api_key"]
+    assert new_key != old_key
+
+    # Old key should fail
+    resp = await client.post("/api/admin/games", json={"name": "OldKey"},
+                             headers={"X-API-Key": old_key})
+    assert resp.status_code == 401
+
+    # New key should work
+    resp = await client.post("/api/admin/games", json={"name": "NewKey"},
+                             headers={"X-API-Key": new_key})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_regenerate_api_key_via_api_key(client: AsyncClient):
+    """Regenerate API key via current API key auth."""
+    user = await register_user(client, "RegenKey", "test", "regen_002")
+    old_key = user["api_key"]
+
+    resp = await client.post("/api/auth/regenerate-api-key",
+                             headers={"X-API-Key": old_key})
+    assert resp.status_code == 200
+    new_key = resp.json()["api_key"]
+    assert new_key != old_key
+
+    # Old key invalidated
+    resp = await client.post("/api/auth/regenerate-api-key",
+                             headers={"X-API-Key": old_key})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_regenerate_api_key_no_auth(client: AsyncClient):
+    """Regenerate without auth returns 401."""
+    resp = await client.post("/api/auth/regenerate-api-key")
+    assert resp.status_code == 401
+
+
+# --- Bot proxy pattern tests ---
+
+
+@pytest.mark.asyncio
+async def test_bot_proxy_submit_event(client: AsyncClient):
+    """Bot authenticates with its own key, submits event on behalf of player."""
+    bot = await register_user(client, "ProxyBot", "test", "proxy_001")
+    player = await register_user(client, "ProxyPlayer", "qq", "proxy_002")
+
+    # Bot creates a game
+    game_resp = await client.post("/api/admin/games", json={"name": "ProxyGame"},
+                                  headers={"X-API-Key": bot["api_key"]})
+    game_id = game_resp.json()["game_id"]
+
+    # Bot submits player_join on behalf of player (bot's API key, player's user_id)
+    resp = await client.post("/api/bot/events", json={
+        "game_id": game_id,
+        "user_id": player["user_id"],
+        "payload": {"event_type": "player_join", "role": "PL"},
+    }, headers={"X-API-Key": bot["api_key"]})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True

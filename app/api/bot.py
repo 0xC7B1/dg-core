@@ -27,7 +27,13 @@ async def submit_event(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Submit a game event to the engine dispatcher."""
+    """Submit a game event to the engine dispatcher.
+
+    Bot proxy pattern: the authenticated caller (via X-API-Key) is the bot
+    service. The ``user_id`` field in the GameEvent body identifies the
+    player on whose behalf the event is submitted. The caller is trusted —
+    no authorization check is performed between caller and event user_id.
+    """
     result = await dispatch(db, event)
     # Broadcast to WebSocket clients watching this game
     await ws_manager.broadcast_to_game(event.game_id, result)
@@ -119,6 +125,7 @@ async def get_game_timeline(
 
 class SwitchCharacterRequest(BaseModel):
     patient_id: str
+    user_id: str | None = None
 
 
 @router.put("/games/{game_id}/active-character")
@@ -128,10 +135,15 @@ async def switch_active_character(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Switch the player's active character in a game. PL only."""
+    """Switch the player's active character in a game. PL only.
+
+    Supports bot proxy: pass ``user_id`` in the body to act on behalf of
+    a player. If omitted, defaults to the authenticated user.
+    """
+    acting_user_id = body.user_id or current_user.id
     try:
         gp = await game_mod.switch_character(
-            db, game_id, current_user.id, body.patient_id
+            db, game_id, acting_user_id, body.patient_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -144,6 +156,7 @@ async def switch_active_character(
 
 class UnlockArchiveRequest(BaseModel):
     fragment_id: str
+    user_id: str | None = None
 
 
 @router.post("/games/{game_id}/unlock-archive")
@@ -153,14 +166,20 @@ async def unlock_archive(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Redeem a color fragment to unlock the corresponding origin archive."""
+    """Redeem a color fragment to unlock the corresponding origin archive.
+
+    Supports bot proxy: pass ``user_id`` in the body to act on behalf of
+    a player. If omitted, defaults to the authenticated user.
+    """
     from sqlalchemy import select
+
+    acting_user_id = body.user_id or current_user.id
 
     # Find the player's active ghost in this game
     gp_result = await db.execute(
         select(GamePlayer).where(
             GamePlayer.game_id == game_id,
-            GamePlayer.user_id == current_user.id,
+            GamePlayer.user_id == acting_user_id,
         )
     )
     gp = gp_result.scalar_one_or_none()

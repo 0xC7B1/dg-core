@@ -132,6 +132,26 @@ async def login_by_platform(
     }
 
 
+@router.post("/resolve-platform")
+async def resolve_platform(
+    req: PlatformLoginRequest,
+    _caller: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Resolve a platform identity to a user_id without issuing a JWT.
+
+    Used by bot services to map platform users (QQ/Discord) to dg-core
+    user IDs. Lighter than /login/platform when the bot only needs the
+    user_id for event submission.
+    """
+    user = await resolve_user_by_platform(db, req.platform, req.platform_uid)
+    if user is None:
+        raise HTTPException(status_code=404, detail="No user bound to this platform identity")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is deactivated")
+    return {"user_id": user.id, "username": user.username}
+
+
 @router.post("/login/api-key")
 async def login_by_api_key(
     req: ApiKeyLoginRequest,
@@ -228,3 +248,19 @@ async def get_me(
             for b in bindings
         ],
     }
+
+
+@router.post("/regenerate-api-key")
+async def regenerate_api_key(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Regenerate the API key for the authenticated user.
+
+    The old key is immediately invalidated. If authenticating via API key,
+    subsequent requests must use the new key.
+    """
+    raw_key, key_hash = generate_api_key()
+    user.api_key_hash = key_hash
+    await db.flush()
+    return {"user_id": user.id, "api_key": raw_key}

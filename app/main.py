@@ -79,9 +79,18 @@ def custom_openapi() -> dict:  # type: ignore[no-untyped-def]
     # Add security requirements to authenticated endpoints.
     # Endpoints using get_current_user() parse headers manually, so FastAPI
     # can't auto-detect them as secured — we annotate them here.
-    # Paths that are public (/health, /api/auth/*, /admin/*) are excluded.
+    # Public paths (/health, /api/auth/register, /api/auth/login/*) are excluded.
+    _auth_required_paths = {
+        "/api/auth/login/platform",
+        "/api/auth/resolve-platform",
+        "/api/auth/regenerate-api-key",
+    }
     for path, path_item in openapi_schema.get("paths", {}).items():
-        if path.startswith(("/api/bot", "/api/admin")):
+        needs_security = (
+            path.startswith(("/api/bot", "/api/admin"))
+            or path in _auth_required_paths
+        )
+        if needs_security:
             for method, operation in path_item.items():
                 if isinstance(operation, dict) and "security" not in operation:
                     operation["security"] = [
