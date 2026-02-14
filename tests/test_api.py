@@ -241,7 +241,7 @@ async def test_switch_character_success(client: AsyncClient):
     """PL can switch active character between sessions."""
     kp, pl, game_id = await _setup_game_with_player(client)
 
-    first_id = await _create_patient_for(
+    await _create_patient_for(
         client, pl["headers"], pl["user_id"], game_id, "患者一号"
     )
     second_id = await _create_patient_for(
@@ -266,11 +266,11 @@ async def test_switch_character_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_switch_character_blocked_during_active_session(client: AsyncClient):
-    """Cannot switch character while a session is active."""
+async def test_switch_character_allowed_during_active_session(client: AsyncClient):
+    """Character switching is allowed even when a session is active."""
     kp, pl, game_id = await _setup_game_with_player(client)
 
-    first_id = await _create_patient_for(
+    await _create_patient_for(
         client, pl["headers"], pl["user_id"], game_id, "患者一号"
     )
     second_id = await _create_patient_for(
@@ -284,14 +284,14 @@ async def test_switch_character_blocked_during_active_session(client: AsyncClien
         "payload": {"event_type": "session_start"},
     }, headers=kp["headers"])
 
-    # Try to switch — should be blocked
+    # Switch should succeed
     resp = await client.put(
         f"/api/bot/games/{game_id}/active-character",
         json={"patient_id": second_id},
         headers=pl["headers"],
     )
-    assert resp.status_code == 400
-    assert "active session" in resp.json()["detail"]
+    assert resp.status_code == 200
+    assert resp.json()["active_patient_id"] == second_id
 
 
 @pytest.mark.asyncio
@@ -576,3 +576,148 @@ async def test_get_unlocked_origin_data_filtering(db_session):
     data3 = character.get_unlocked_origin_data(ghost)
     assert data3["origin_name"] == "FilterPatient"
     assert "origin_identity" not in data3  # still locked
+
+
+# --- Region position + hybrid resolution tests ---
+
+
+@pytest.mark.asyncio
+async def test_region_transition_sets_patient_position(client: AsyncClient):
+    """Region transition updates the active Patient's position, not GamePlayer."""
+    kp = await register_user(client, "KP_rt", "test", "kp_rt")
+    pl = await register_user(client, "PL_rt", "test", "pl_rt")
+    h_kp = kp["headers"]
+    h_pl = pl["headers"]
+
+    # Create game + add PL
+    g = await client.post("/api/admin/games", json={"name": "RegTransGame"}, headers=h_kp)
+    game_id = g.json()["game_id"]
+    await client.post(f"/api/admin/games/{game_id}/players", json={
+        "user_id": pl["user_id"], "role": "PL",
+    }, headers=h_kp)
+
+    # Create region + patient
+    r = await client.post(f"/api/admin/games/{game_id}/regions", json={
+        "code": "A", "name": "区域A",
+    }, headers=h_kp)
+    region_id = r.json()["region_id"]
+
+    patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "位移患者")
+
+    # Move to region A
+    resp = await client.post("/api/bot/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "region_transition", "target_region_id": region_id},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    # Verify patient has the position via admin character endpoint
+    char_resp = await client.get(f"/api/admin/characters/{patient_id}", headers=h_pl)
+    assert char_resp.json()["current_region_id"] == region_id
+
+
+@pytest.mark.asyncio
+async def test_hybrid_resolution_by_session_region(db_session):
+    """Session with region_id resolves the player's patient in that region."""
+    from app.domain import character, region as region_mod, session as session_mod
+    from app.domain.dispatcher import _resolve_patient_for_event
+    from app.models.db_models import Game, GamePlayer, User
+    from app.models.event import GameEvent, SkillCheckPayload
+
+    db = db_session
+
+    # Setup
+    user = User(username="hybrid_user")
+    db.add(user)
+    await db.flush()
+
+    game = Game(name="HybridTest", created_by=user.id)
+    db.add(game)
+    await db.flush()
+
+    gp = GamePlayer(game_id=game.id, user_id=user.id, role="PL")
+    db.add(gp)
+    await db.flush()
+
+    region_a = await region_mod.create_region(db, game.id, "区域A", "A")
+    region_b = await region_mod.create_region(db, game.id, "区域B", "B")
+
+    patient_a = await character.create_patient(db, user.id, game.id, "患者A", "C")
+    patient_b = await character.create_patient(db, user.id, game.id, "患者B", "M")
+
+    # Place patients in different regions
+    patient_a.current_region_id = region_a.id
+    patient_b.current_region_id = region_b.id
+    await db.flush()
+
+    # active_patient is A
+    assert gp.active_patient_id == patient_a.id
+
+    # Start session in region B
+    session = await session_mod.start_session(db, game.id, user.id, region_id=region_b.id)
+
+    # Event with session_id should resolve to patient_b (in region B)
+    event = GameEvent(
+        game_id=game.id,
+        user_id=user.id,
+        session_id=session.id,
+        payload=SkillCheckPayload(event_type="skill_check", color="M", difficulty=3),
+    )
+    resolved = await _resolve_patient_for_event(db, event)
+    assert resolved is not None
+    assert resolved.id == patient_b.id
+
+    # Event without session_id should resolve to active patient (A)
+    event_no_session = GameEvent(
+        game_id=game.id,
+        user_id=user.id,
+        payload=SkillCheckPayload(event_type="skill_check", color="C", difficulty=3),
+    )
+    resolved_fallback = await _resolve_patient_for_event(db, event_no_session)
+    assert resolved_fallback is not None
+    assert resolved_fallback.id == patient_a.id
+
+
+@pytest.mark.asyncio
+async def test_session_region_rejects_wrong_region(db_session):
+    """Event in a session rejects if no patient is in the session's region."""
+    from app.domain import character, region as region_mod, session as session_mod
+    from app.domain.dispatcher import _resolve_patient_for_event
+    from app.models.db_models import Game, GamePlayer, User
+    from app.models.event import GameEvent, SkillCheckPayload
+
+    db = db_session
+
+    user = User(username="reject_user")
+    db.add(user)
+    await db.flush()
+
+    game = Game(name="RejectTest", created_by=user.id)
+    db.add(game)
+    await db.flush()
+
+    gp = GamePlayer(game_id=game.id, user_id=user.id, role="PL")
+    db.add(gp)
+    await db.flush()
+
+    region_a = await region_mod.create_region(db, game.id, "区域A", "A")
+    region_b = await region_mod.create_region(db, game.id, "区域B", "B")
+
+    # Patient only in region A
+    patient_a = await character.create_patient(db, user.id, game.id, "患者A", "C")
+    patient_a.current_region_id = region_a.id
+    await db.flush()
+
+    # Session in region B — player has no patient there
+    session = await session_mod.start_session(db, game.id, user.id, region_id=region_b.id)
+
+    event = GameEvent(
+        game_id=game.id,
+        user_id=user.id,
+        session_id=session.id,
+        payload=SkillCheckPayload(event_type="skill_check", color="C", difficulty=3),
+    )
+    resolved = await _resolve_patient_for_event(db, event)
+    assert resolved is None  # No patient in region B

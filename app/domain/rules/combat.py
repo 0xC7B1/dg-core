@@ -64,7 +64,8 @@ async def handle_attack(
         )
 
         # Drop a color fragment on successful hit
-        cmyk = await character.apply_color_fragment(db, attacker, color_used, value=1)
+        fragment_result = await character.apply_color_fragment(db, attacker, color_used, value=1)
+        cmyk = fragment_result["cmyk"]
         state_changes.append(
             StateChange(
                 entity_type="ghost",

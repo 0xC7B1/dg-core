@@ -72,9 +72,9 @@ class BulkOpsView(BaseView):
             rows = result.scalars().all()
         return _csv_response(
             "patients.csv",
-            ["id", "user_id", "game_id", "name", "soul_color", "gender", "age", "identity"],
+            ["id", "user_id", "game_id", "name", "soul_color", "gender", "age", "identity", "current_region_id", "current_location_id"],
             [
-                [r.id, r.user_id, r.game_id, r.name, r.soul_color, r.gender or "", r.age or "", r.identity or ""]
+                [r.id, r.user_id, r.game_id, r.name, r.soul_color, r.gender or "", r.age or "", r.identity or "", r.current_region_id or "", r.current_location_id or ""]
                 for r in rows
             ],
         )
@@ -166,6 +166,8 @@ def _create_patient(row: dict) -> Patient:
         gender=row.get("gender") or None,
         age=int(row["age"]) if row.get("age") else None,
         identity=row.get("identity") or None,
+        current_region_id=row.get("current_region_id") or None,
+        current_location_id=row.get("current_location_id") or None,
     )
 
 

@@ -7,7 +7,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db_models import Game, GamePlayer, Patient, Session
+from app.models.db_models import Game, GamePlayer, Patient
 
 
 async def create_game(
@@ -100,7 +100,7 @@ async def switch_character(
     user_id: str,
     patient_id: str,
 ) -> GamePlayer:
-    """Switch a player's active character. PL only, no active session allowed."""
+    """Switch a player's active character. PL only."""
     # Find the GamePlayer link
     result = await db.execute(
         select(GamePlayer).where(
@@ -127,16 +127,6 @@ async def switch_character(
         raise ValueError(
             f"Patient {patient_id} not found for user {user_id} in game {game_id}"
         )
-
-    # Reject if there's an active session in this game
-    active_session = await db.execute(
-        select(Session).where(
-            Session.game_id == game_id,
-            Session.status == "active",
-        )
-    )
-    if active_session.scalar_one_or_none() is not None:
-        raise ValueError("Cannot switch character during an active session")
 
     gp.active_patient_id = patient_id
     await db.flush()

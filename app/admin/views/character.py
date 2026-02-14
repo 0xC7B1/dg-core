@@ -29,6 +29,8 @@ class PatientAdmin(ModelView, model=Patient):
         Patient.soul_color,
         "user",
         "game",
+        "current_region",
+        "current_location",
         Patient.created_at,
     ]
     column_searchable_list = [Patient.name, Patient.id]
@@ -46,6 +48,8 @@ class PatientAdmin(ModelView, model=Patient):
         Patient.ideal_projection,
         Patient.user,
         Patient.game,
+        Patient.current_region,
+        Patient.current_location,
         Patient.ghost,
         Patient.origin_ghost,
         Patient.created_at,
@@ -62,6 +66,8 @@ class PatientAdmin(ModelView, model=Patient):
         "portrait_url",
         "personality_archives_json",
         "ideal_projection",
+        "current_region",
+        "current_location",
     ]
 
     can_export = True

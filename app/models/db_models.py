@@ -103,7 +103,7 @@ class Game(Base):
 
 
 class GamePlayer(Base):
-    """Player participation in a game — role and current location tracking."""
+    """Player participation in a game — role and active character tracking."""
 
     __tablename__ = "game_players"
 
@@ -119,19 +119,11 @@ class GamePlayer(Base):
     active_patient_id: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("patients.id"), nullable=True
     )
-    current_region_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("regions.id"), nullable=True
-    )
-    current_location_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("locations.id"), nullable=True
-    )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     game: Mapped[Game] = relationship(back_populates="user_links")
     user: Mapped[User] = relationship(back_populates="game_links")
     active_patient: Mapped[Patient | None] = relationship(foreign_keys=[active_patient_id])
-    current_region: Mapped[Region | None] = relationship()
-    current_location: Mapped[Location | None] = relationship()
 
     def __str__(self) -> str:
         return f"{self.role} ({self.user_id[:8]} in {self.game_id[:8]})"
@@ -201,10 +193,18 @@ class Patient(Base):
     soul_color: Mapped[str] = mapped_column(String(1), nullable=False)  # C/M/Y/K
     personality_archives_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     ideal_projection: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_region_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("regions.id"), nullable=True
+    )
+    current_location_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("locations.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     user: Mapped[User] = relationship(back_populates="patients")
     game: Mapped[Game] = relationship(back_populates="patients")
+    current_region: Mapped[Region | None] = relationship()
+    current_location: Mapped[Location | None] = relationship()
     ghost: Mapped[Ghost | None] = relationship(
         foreign_keys="[Ghost.current_patient_id]", back_populates="current_patient", uselist=False
     )

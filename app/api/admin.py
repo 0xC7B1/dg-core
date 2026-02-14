@@ -326,6 +326,8 @@ async def get_character(
             "gender": patient.gender,
             "age": patient.age,
             "identity": patient.identity,
+            "current_region_id": patient.current_region_id,
+            "current_location_id": patient.current_location_id,
         }
 
     raise HTTPException(status_code=404, detail="Character not found")

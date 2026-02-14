@@ -128,7 +128,7 @@ async def switch_active_character(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Switch the player's active character in a game. PL only, not during active sessions."""
+    """Switch the player's active character in a game. PL only."""
     try:
         gp = await game_mod.switch_character(
             db, game_id, current_user.id, body.patient_id

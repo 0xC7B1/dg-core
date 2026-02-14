@@ -7,7 +7,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db_models import GamePlayer, Location, Region
+from app.models.db_models import GamePlayer, Location, Patient, Region
 
 
 # --- Region ---
@@ -88,14 +88,14 @@ async def get_locations(db: AsyncSession, region_id: str) -> list[Location]:
 
 # --- Player movement ---
 
-async def move_player(
+async def move_character(
     db: AsyncSession,
     game_id: str,
     user_id: str,
     region_id: str | None = None,
     location_id: str | None = None,
-) -> GamePlayer:
-    """Update a player's current region and/or location."""
+) -> Patient:
+    """Update the active patient's current region and/or location."""
     result = await db.execute(
         select(GamePlayer).where(
             GamePlayer.game_id == game_id,
@@ -105,9 +105,20 @@ async def move_player(
     gp = result.scalar_one_or_none()
     if gp is None:
         raise ValueError(f"Player {user_id} not found in game {game_id}")
+    if gp.active_patient_id is None:
+        raise ValueError("Player has no active character")
+
+    patient_result = await db.execute(
+        select(Patient).where(Patient.id == gp.active_patient_id)
+    )
+    patient = patient_result.scalar_one_or_none()
+    if patient is None:
+        raise ValueError("Active character not found")
+
     if region_id is not None:
-        gp.current_region_id = region_id
+        patient.current_region_id = region_id
+        patient.current_location_id = None  # reset location on region change
     if location_id is not None:
-        gp.current_location_id = location_id
+        patient.current_location_id = location_id
     await db.flush()
-    return gp
+    return patient

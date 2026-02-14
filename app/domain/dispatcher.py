@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain import character, game as game_mod, region as region_mod
 from app.domain import session as session_mod, timeline
 from app.domain.rules import combat, narration, skill
+from app.models.db_models import GamePlayer, Ghost, Patient, Session
 from app.models.event import (
     ApplyFragmentPayload,
     AttackPayload,
@@ -155,7 +157,14 @@ async def _handle_skill_check(db: AsyncSession, event: GameEvent) -> EngineResul
     sid = _require_session(event)
     payload: SkillCheckPayload = event.payload  # type: ignore[assignment]
 
-    ghost = await _find_player_ghost(db, event.game_id, event.user_id)
+    patient = await _resolve_patient_for_event(db, event)
+    if patient is None:
+        return EngineResult(
+            success=False, event_type="skill_check",
+            error="No character in this session's region",
+        )
+
+    ghost = await _find_player_ghost(db, patient_id=patient.id)
     if ghost is None:
         return EngineResult(
             success=False, event_type="skill_check", error="Player has no ghost in this game"
@@ -328,7 +337,7 @@ async def _handle_hp_change(db: AsyncSession, event: GameEvent) -> EngineResult:
 
 async def _handle_region_transition(db: AsyncSession, event: GameEvent) -> EngineResult:
     payload: RegionTransitionPayload = event.payload  # type: ignore[assignment]
-    await region_mod.move_player(
+    patient = await region_mod.move_character(
         db, event.game_id, event.user_id, region_id=payload.target_region_id
     )
     if event.session_id:
@@ -343,8 +352,8 @@ async def _handle_region_transition(db: AsyncSession, event: GameEvent) -> Engin
         data={"user_id": event.user_id, "region_id": payload.target_region_id},
         state_changes=[
             StateChange(
-                entity_type="game_player",
-                entity_id=event.user_id,
+                entity_type="patient",
+                entity_id=patient.id,
                 field="current_region_id",
                 new_value=payload.target_region_id,
             )
@@ -354,7 +363,7 @@ async def _handle_region_transition(db: AsyncSession, event: GameEvent) -> Engin
 
 async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> EngineResult:
     payload: LocationTransitionPayload = event.payload  # type: ignore[assignment]
-    await region_mod.move_player(
+    patient = await region_mod.move_character(
         db, event.game_id, event.user_id, location_id=payload.target_location_id
     )
     if event.session_id:
@@ -369,8 +378,8 @@ async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> Eng
         data={"user_id": event.user_id, "location_id": payload.target_location_id},
         state_changes=[
             StateChange(
-                entity_type="game_player",
-                entity_id=event.user_id,
+                entity_type="patient",
+                entity_id=patient.id,
                 field="current_location_id",
                 new_value=payload.target_location_id,
             )
@@ -380,24 +389,65 @@ async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> Eng
 
 # --- Helpers ---
 
-async def _find_player_ghost(
-    db: AsyncSession, game_id: str, user_id: str
-) -> character.Ghost | None:
-    """Find the ghost for this user's active patient in this game."""
-    from sqlalchemy import select
-    from app.models.db_models import GamePlayer, Ghost
+async def _resolve_patient_for_event(
+    db: AsyncSession, event: GameEvent
+) -> Patient | None:
+    """Hybrid character resolution: session region → patient, or fallback to active_patient_id."""
+    if event.session_id:
+        # Resolve by session region
+        session_result = await db.execute(
+            select(Session).where(Session.id == event.session_id)
+        )
+        session = session_result.scalar_one_or_none()
+        if session is not None and session.region_id is not None:
+            patient_result = await db.execute(
+                select(Patient).where(
+                    Patient.user_id == event.user_id,
+                    Patient.game_id == event.game_id,
+                    Patient.current_region_id == session.region_id,
+                )
+            )
+            return patient_result.scalar_one_or_none()
 
+    # Fallback: use active_patient_id from GamePlayer
     gp_result = await db.execute(
         select(GamePlayer).where(
-            GamePlayer.game_id == game_id,
-            GamePlayer.user_id == user_id,
+            GamePlayer.game_id == event.game_id,
+            GamePlayer.user_id == event.user_id,
         )
     )
     gp = gp_result.scalar_one_or_none()
     if gp is None or gp.active_patient_id is None:
         return None
 
+    patient_result = await db.execute(
+        select(Patient).where(Patient.id == gp.active_patient_id)
+    )
+    return patient_result.scalar_one_or_none()
+
+
+async def _find_player_ghost(
+    db: AsyncSession,
+    game_id: str | None = None,
+    user_id: str | None = None,
+    patient_id: str | None = None,
+) -> Ghost | None:
+    """Find the ghost for a patient. Accepts direct patient_id or resolves via GamePlayer."""
+    if patient_id is None:
+        if game_id is None or user_id is None:
+            return None
+        gp_result = await db.execute(
+            select(GamePlayer).where(
+                GamePlayer.game_id == game_id,
+                GamePlayer.user_id == user_id,
+            )
+        )
+        gp = gp_result.scalar_one_or_none()
+        if gp is None or gp.active_patient_id is None:
+            return None
+        patient_id = gp.active_patient_id
+
     result = await db.execute(
-        select(Ghost).where(Ghost.current_patient_id == gp.active_patient_id)
+        select(Ghost).where(Ghost.current_patient_id == patient_id)
     )
     return result.scalar_one_or_none()

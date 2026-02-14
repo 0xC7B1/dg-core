@@ -46,8 +46,6 @@ class GamePlayerAdmin(ModelView, model=GamePlayer):
         "user",
         GamePlayer.role,
         "active_patient",
-        "current_region",
-        "current_location",
         GamePlayer.joined_at,
     ]
     column_searchable_list = [GamePlayer.game_id, GamePlayer.user_id]
@@ -58,8 +56,6 @@ class GamePlayerAdmin(ModelView, model=GamePlayer):
         "user",
         "role",
         "active_patient",
-        "current_region",
-        "current_location",
     ]
 
 
