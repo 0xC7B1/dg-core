@@ -131,3 +131,25 @@ async def switch_character(
     gp.active_patient_id = patient_id
     await db.flush()
     return gp
+
+
+async def update_player_role(
+    db: AsyncSession,
+    game_id: str,
+    user_id: str,
+    role: str,
+) -> GamePlayer:
+    """Update a player's role in a game."""
+    result = await db.execute(
+        select(GamePlayer).where(
+            GamePlayer.game_id == game_id,
+            GamePlayer.user_id == user_id,
+        )
+    )
+    gp = result.scalar_one_or_none()
+    if gp is None:
+        raise ValueError(f"Player {user_id} not found in game {game_id}")
+    
+    gp.role = role
+    await db.flush()
+    return gp

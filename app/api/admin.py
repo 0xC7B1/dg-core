@@ -36,6 +36,10 @@ class AddPlayerRequest(BaseModel):
     role: str = "PL"
 
 
+class UpdatePlayerRoleRequest(BaseModel):
+    role: str
+
+
 class CreateRegionRequest(BaseModel):
     code: str
     name: str
@@ -135,6 +139,19 @@ async def add_player_to_game(
 ) -> dict:
     link = await game_mod.join_game(db, game_id, req.user_id, req.role)
     return {"game_id": game_id, "user_id": req.user_id, "role": link.role}
+
+
+@router.put("/games/{game_id}/players/{user_id}/role")
+async def update_game_player_role(
+    game_id: str,
+    user_id: str,
+    req: UpdatePlayerRoleRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Update a player's role in a game (DM/PL)."""
+    link = await game_mod.update_player_role(db, game_id, user_id, req.role)
+    return {"game_id": game_id, "user_id": user_id, "role": link.role}
 
 
 # --- Region endpoints ---
