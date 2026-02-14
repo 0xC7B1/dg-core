@@ -18,6 +18,8 @@ async def start_session(
     location_id: str | None = None,
 ) -> Session:
     """Start a new play session within a game."""
+    await _check_no_conflicting_session(db, game_id, region_id, location_id)
+
     session = Session(
         game_id=game_id,
         started_by=started_by,
@@ -66,6 +68,12 @@ async def resume_session(db: AsyncSession, session_id: str) -> Session:
         raise ValueError(f"Session {session_id} not found")
     if session.status != "paused":
         raise ValueError(f"Cannot resume session with status '{session.status}'")
+
+    await _check_no_conflicting_session(
+        db, session.game_id, session.region_id, session.location_id,
+        exclude_session_id=session.id,
+    )
+
     session.status = "active"
     await db.flush()
     return session
@@ -194,6 +202,43 @@ async def auto_join_location_players(
     if joined:
         await db.flush()
     return joined
+
+
+async def _check_no_conflicting_session(
+    db: AsyncSession,
+    game_id: str,
+    region_id: str | None,
+    location_id: str | None,
+    exclude_session_id: str | None = None,
+) -> None:
+    """Raise ValueError if an active session already exists at the same location or region."""
+    if location_id is not None:
+        stmt = select(Session).where(
+            Session.game_id == game_id,
+            Session.location_id == location_id,
+            Session.status == "active",
+        )
+    elif region_id is not None:
+        stmt = select(Session).where(
+            Session.game_id == game_id,
+            Session.region_id == region_id,
+            Session.location_id.is_(None),
+            Session.status == "active",
+        )
+    else:
+        return
+
+    if exclude_session_id is not None:
+        stmt = stmt.where(Session.id != exclude_session_id)
+
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        scope = f"location {location_id}" if location_id else f"region {region_id}"
+        raise ValueError(
+            f"An active session already exists at {scope} "
+            f"(session {existing.id})"
+        )
 
 
 async def get_session_info(db: AsyncSession, session_id: str) -> dict:
