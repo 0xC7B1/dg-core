@@ -29,7 +29,7 @@ async def set_event(
     name: str,
     expression: str,
     color_restriction: str | None = None,
-    created_by: str = "",
+    created_by: str | None = None,
 ) -> EventDefinition:
     """DM creates/replaces an event definition for the current session."""
     # Deactivate any existing active event with the same name

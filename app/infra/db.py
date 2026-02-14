@@ -1,5 +1,6 @@
 """SQLAlchemy async engine and session factory."""
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.infra.config import settings
@@ -9,6 +10,15 @@ engine = create_async_engine(
     echo=settings.app_debug,
     future=True,
 )
+
+# Enable foreign key enforcement for SQLite
+if "sqlite" in settings.database_url:
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 async_session_factory = async_sessionmaker(
     engine,

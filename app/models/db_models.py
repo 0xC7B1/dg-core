@@ -13,10 +13,20 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    MetaData,
     String,
     Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# Naming convention for constraints — required for Alembic batch mode (SQLite)
+convention = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
 
 
 def _uuid() -> str:
@@ -28,7 +38,7 @@ def _utcnow() -> datetime:
 
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=convention)
 
 
 class User(Base):
@@ -46,8 +56,12 @@ class User(Base):
     platform_bindings: Mapped[list[PlatformBinding]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
-    game_links: Mapped[list[GamePlayer]] = relationship(back_populates="user")
-    patients: Mapped[list[Patient]] = relationship(back_populates="user")
+    game_links: Mapped[list[GamePlayer]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    patients: Mapped[list[Patient]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return f"{self.username} ({self.id[:8]})"
@@ -59,7 +73,9 @@ class PlatformBinding(Base):
     __tablename__ = "platform_bindings"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     platform: Mapped[str] = mapped_column(String(32), nullable=False)  # "qq", "discord", "web"
     platform_uid: Mapped[str] = mapped_column(String(128), nullable=False)
     bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -88,15 +104,33 @@ class Game(Base):
     )
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     flags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
+    created_by: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    creator: Mapped[User] = relationship(foreign_keys=[created_by])
-    user_links: Mapped[list[GamePlayer]] = relationship(back_populates="game")
-    regions: Mapped[list[Region]] = relationship(back_populates="game")
-    patients: Mapped[list[Patient]] = relationship(back_populates="game")
-    ghosts: Mapped[list[Ghost]] = relationship(back_populates="game")
-    sessions: Mapped[list[Session]] = relationship(back_populates="game")
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by])
+    user_links: Mapped[list[GamePlayer]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    regions: Mapped[list[Region]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    patients: Mapped[list[Patient]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    ghosts: Mapped[list[Ghost]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list[Session]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    item_definitions: Mapped[list[ItemDefinition]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
+    communication_requests: Mapped[list[CommunicationRequest]] = relationship(
+        back_populates="game", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -108,16 +142,16 @@ class GamePlayer(Base):
     __tablename__ = "game_players"
 
     game_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("games.id"), primary_key=True
+        String(32), ForeignKey("games.id", ondelete="CASCADE"), primary_key=True
     )
     user_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("users.id"), primary_key=True
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     role: Mapped[str] = mapped_column(
         Enum("DM", "PL", name="player_role"), nullable=False
     )
     active_patient_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("patients.id"), nullable=True
+        String(32), ForeignKey("patients.id", ondelete="SET NULL"), nullable=True
     )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -135,7 +169,9 @@ class Region(Base):
     __tablename__ = "regions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     code: Mapped[str] = mapped_column(String(8), nullable=False)  # "A", "B", "C", "D"
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -144,7 +180,9 @@ class Region(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     game: Mapped[Game] = relationship(back_populates="regions")
-    locations: Mapped[list[Location]] = relationship(back_populates="region")
+    locations: Mapped[list[Location]] = relationship(
+        back_populates="region", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return f"{self.code} - {self.name}"
@@ -161,7 +199,9 @@ class Location(Base):
     __tablename__ = "locations"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    region_id: Mapped[str] = mapped_column(String(32), ForeignKey("regions.id"))
+    region_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("regions.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)  # Rich text for RAG indexing
@@ -183,8 +223,12 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     gender: Mapped[str | None] = mapped_column(String(16), nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -194,22 +238,41 @@ class Patient(Base):
     personality_archives_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     ideal_projection: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_region_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("regions.id"), nullable=True
+        String(32), ForeignKey("regions.id", ondelete="SET NULL"), nullable=True
     )
     current_location_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("locations.id"), nullable=True
+        String(32), ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     user: Mapped[User] = relationship(back_populates="patients")
     game: Mapped[Game] = relationship(back_populates="patients")
-    current_region: Mapped[Region | None] = relationship()
-    current_location: Mapped[Location | None] = relationship()
+    current_region: Mapped[Region | None] = relationship(
+        foreign_keys=[current_region_id]
+    )
+    current_location: Mapped[Location | None] = relationship(
+        foreign_keys=[current_location_id]
+    )
     ghost: Mapped[Ghost | None] = relationship(
         foreign_keys="[Ghost.current_patient_id]", back_populates="current_patient", uselist=False
     )
     origin_ghost: Mapped[Ghost | None] = relationship(
         foreign_keys="[Ghost.origin_patient_id]", back_populates="origin_patient", uselist=False
+    )
+    # Cascade-owned children
+    player_items: Mapped[list[PlayerItem]] = relationship(
+        back_populates="patient", cascade="all, delete-orphan"
+    )
+    session_links: Mapped[list[SessionPlayer]] = relationship(
+        back_populates="patient", cascade="all"
+    )
+    initiated_comms: Mapped[list[CommunicationRequest]] = relationship(
+        foreign_keys="[CommunicationRequest.initiator_patient_id]",
+        back_populates="initiator_patient", cascade="all",
+    )
+    received_comms: Mapped[list[CommunicationRequest]] = relationship(
+        foreign_keys="[CommunicationRequest.target_patient_id]",
+        back_populates="target_patient", cascade="all",
     )
 
     def __str__(self) -> str:
@@ -225,13 +288,19 @@ class Ghost(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     current_patient_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("patients.id"), unique=True, nullable=True
+        String(32), ForeignKey("patients.id", ondelete="SET NULL"),
+        unique=True, nullable=True,
     )
     origin_patient_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("patients.id"), unique=True, nullable=True
+        String(32), ForeignKey("patients.id", ondelete="SET NULL"),
+        unique=True, nullable=True,
     )
-    creator_user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    creator_user_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     appearance: Mapped[str | None] = mapped_column(Text, nullable=True)
     personality: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -263,11 +332,20 @@ class Ghost(Base):
     origin_patient: Mapped[Patient | None] = relationship(
         foreign_keys=[origin_patient_id], back_populates="origin_ghost"
     )
-    creator_user: Mapped[User] = relationship(foreign_keys=[creator_user_id])
+    creator_user: Mapped[User | None] = relationship(foreign_keys=[creator_user_id])
     game: Mapped[Game] = relationship(back_populates="ghosts")
-    print_abilities: Mapped[list[PrintAbility]] = relationship(back_populates="ghost")
-    color_fragments: Mapped[list[ColorFragment]] = relationship(back_populates="holder_ghost")
-    buffs: Mapped[list[Buff]] = relationship(back_populates="ghost")
+    print_abilities: Mapped[list[PrintAbility]] = relationship(
+        back_populates="ghost", cascade="all, delete-orphan"
+    )
+    color_fragments: Mapped[list[ColorFragment]] = relationship(
+        back_populates="holder_ghost", cascade="all, delete-orphan"
+    )
+    buffs: Mapped[list[Buff]] = relationship(
+        back_populates="ghost", cascade="all, delete-orphan"
+    )
+    event_ability_usages: Mapped[list[EventAbilityUsage]] = relationship(
+        back_populates="ghost", cascade="all",
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -281,13 +359,18 @@ class PrintAbility(Base):
     __tablename__ = "print_abilities"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    ghost_id: Mapped[str] = mapped_column(String(32), ForeignKey("ghosts.id"))
+    ghost_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("ghosts.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str] = mapped_column(String(1), nullable=False)  # C/M/Y/K
     ability_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     ghost: Mapped[Ghost] = relationship(back_populates="print_abilities")
+    ability_usages: Mapped[list[EventAbilityUsage]] = relationship(
+        back_populates="ability", cascade="all",
+    )
 
     def __str__(self) -> str:
         return f"{self.name} ({self.color})"
@@ -299,14 +382,18 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     region_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("regions.id"), nullable=True
+        String(32), ForeignKey("regions.id", ondelete="SET NULL"), nullable=True
     )
     location_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("locations.id"), nullable=True
+        String(32), ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
     )
-    started_by: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
+    started_by: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(
         Enum("active", "paused", "ended", name="session_status"),
         default="active",
@@ -317,9 +404,16 @@ class Session(Base):
     game: Mapped[Game] = relationship(back_populates="sessions")
     region: Mapped[Region | None] = relationship(foreign_keys=[region_id])
     location: Mapped[Location | None] = relationship(foreign_keys=[location_id])
-    started_by_user: Mapped[User] = relationship(foreign_keys=[started_by])
-    timeline_events: Mapped[list[TimelineEvent]] = relationship(back_populates="session")
-    session_players: Mapped[list[SessionPlayer]] = relationship(back_populates="session")
+    started_by_user: Mapped[User | None] = relationship(foreign_keys=[started_by])
+    timeline_events: Mapped[list[TimelineEvent]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+    session_players: Mapped[list[SessionPlayer]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+    event_definitions: Mapped[list[EventDefinition]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return f"Session {self.id[:8]} ({self.status})"
@@ -333,8 +427,12 @@ class TimelineEvent(Base):
     __tablename__ = "timeline_events"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(String(32), ForeignKey("sessions.id"))
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    session_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -359,8 +457,12 @@ class ColorFragment(Base):
     __tablename__ = "color_fragments"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
-    holder_ghost_id: Mapped[str] = mapped_column(String(32), ForeignKey("ghosts.id"))
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
+    holder_ghost_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("ghosts.id", ondelete="CASCADE")
+    )
     color: Mapped[str] = mapped_column(String(1), nullable=False)  # C/M/Y/K
     value: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     redeemed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -386,12 +488,16 @@ class SessionPlayer(Base):
     __tablename__ = "session_players"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(String(32), ForeignKey("sessions.id"))
-    patient_id: Mapped[str] = mapped_column(String(32), ForeignKey("patients.id"))
+    session_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    patient_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("patients.id", ondelete="CASCADE")
+    )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     session: Mapped[Session] = relationship(back_populates="session_players")
-    patient: Mapped[Patient] = relationship()
+    patient: Mapped[Patient] = relationship(back_populates="session_links")
 
     def __str__(self) -> str:
         return f"SessionPlayer({self.patient_id[:8]} in {self.session_id[:8]})"
@@ -409,8 +515,12 @@ class Buff(Base):
     __tablename__ = "buffs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    ghost_id: Mapped[str] = mapped_column(String(32), ForeignKey("ghosts.id"))
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    ghost_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("ghosts.id", ondelete="CASCADE")
+    )
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     expression: Mapped[str] = mapped_column(String(128), nullable=False)
     buff_type: Mapped[str] = mapped_column(
@@ -418,7 +528,9 @@ class Buff(Base):
         nullable=False,
     )
     remaining_rounds: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_by: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
+    created_by: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     ghost: Mapped[Ghost] = relationship(back_populates="buffs")
@@ -439,19 +551,28 @@ class EventDefinition(Base):
     __tablename__ = "event_definitions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(String(32), ForeignKey("sessions.id"))
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    session_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("sessions.id", ondelete="CASCADE")
+    )
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     expression: Mapped[str] = mapped_column(String(128), nullable=False)
     color_restriction: Mapped[str | None] = mapped_column(String(1), nullable=True)
     target_roll_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_roll_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[str] = mapped_column(String(32), ForeignKey("users.id"))
+    created_by: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    session: Mapped[Session] = relationship()
+    session: Mapped[Session] = relationship(back_populates="event_definitions")
     game: Mapped[Game] = relationship()
+    ability_usages: Mapped[list[EventAbilityUsage]] = relationship(
+        back_populates="event_definition", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return f"Event: {self.name} ({self.expression})"
@@ -469,11 +590,19 @@ class EventAbilityUsage(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     event_def_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("event_definitions.id")
+        String(32), ForeignKey("event_definitions.id", ondelete="CASCADE")
     )
-    ghost_id: Mapped[str] = mapped_column(String(32), ForeignKey("ghosts.id"))
-    ability_id: Mapped[str] = mapped_column(String(32), ForeignKey("print_abilities.id"))
+    ghost_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("ghosts.id", ondelete="CASCADE")
+    )
+    ability_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("print_abilities.id", ondelete="CASCADE")
+    )
     used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    event_definition: Mapped[EventDefinition] = relationship(back_populates="ability_usages")
+    ghost: Mapped[Ghost] = relationship(back_populates="event_ability_usages")
+    ability: Mapped[PrintAbility] = relationship(back_populates="ability_usages")
 
     def __str__(self) -> str:
         return f"Usage({self.ability_id[:8]} in event {self.event_def_id[:8]})"
@@ -496,30 +625,34 @@ class CommunicationRequest(Base):
     __tablename__ = "communication_requests"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     initiator_patient_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("patients.id")
+        String(32), ForeignKey("patients.id", ondelete="CASCADE")
     )
     target_patient_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("patients.id")
+        String(32), ForeignKey("patients.id", ondelete="CASCADE")
     )
     status: Mapped[str] = mapped_column(
         Enum("pending", "accepted", "rejected", "cancelled", name="comm_status"),
         default="pending",
     )
     transferred_ability_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("print_abilities.id"), nullable=True
+        String(32), ForeignKey("print_abilities.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
-    game: Mapped[Game] = relationship()
+    game: Mapped[Game] = relationship(back_populates="communication_requests")
     initiator_patient: Mapped[Patient] = relationship(
-        foreign_keys=[initiator_patient_id]
+        foreign_keys=[initiator_patient_id], back_populates="initiated_comms"
     )
-    target_patient: Mapped[Patient] = relationship(foreign_keys=[target_patient_id])
+    target_patient: Mapped[Patient] = relationship(
+        foreign_keys=[target_patient_id], back_populates="received_comms"
+    )
 
     def __str__(self) -> str:
         return f"Comm({self.status})"
@@ -538,7 +671,9 @@ class ItemDefinition(Base):
     __tablename__ = "item_definitions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    game_id: Mapped[str] = mapped_column(String(32), ForeignKey("games.id"))
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE")
+    )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     item_type: Mapped[str] = mapped_column(String(32), nullable=False, default="generic")
@@ -546,7 +681,10 @@ class ItemDefinition(Base):
     stackable: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    game: Mapped[Game] = relationship()
+    game: Mapped[Game] = relationship(back_populates="item_definitions")
+    player_items: Mapped[list[PlayerItem]] = relationship(
+        back_populates="item_definition", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -563,15 +701,17 @@ class PlayerItem(Base):
     __tablename__ = "player_items"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    patient_id: Mapped[str] = mapped_column(String(32), ForeignKey("patients.id"))
+    patient_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("patients.id", ondelete="CASCADE")
+    )
     item_def_id: Mapped[str] = mapped_column(
-        String(32), ForeignKey("item_definitions.id")
+        String(32), ForeignKey("item_definitions.id", ondelete="CASCADE")
     )
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    patient: Mapped[Patient] = relationship()
-    item_definition: Mapped[ItemDefinition] = relationship()
+    patient: Mapped[Patient] = relationship(back_populates="player_items")
+    item_definition: Mapped[ItemDefinition] = relationship(back_populates="player_items")
 
     def __str__(self) -> str:
         return f"Item x{self.count}"

@@ -36,7 +36,7 @@ async def add_buff(
     name: str,
     expression: str,
     remaining_rounds: int = 1,
-    created_by: str = "",
+    created_by: str | None = None,
 ) -> Buff:
     """Add a buff/debuff to a ghost."""
     buff_type = classify_expression(expression)
