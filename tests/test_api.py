@@ -248,7 +248,7 @@ async def test_switch_character_success(client: AsyncClient):
 
     # Switch to second character
     resp = await client.put(
-        f"/api/games/{game_id}/active-character",
+        f"/api/games/{game_id}/characters/active",
         json={"patient_id": second_id},
         headers=pl["headers"],
     )
@@ -284,7 +284,7 @@ async def test_switch_character_allowed_during_active_session(client: AsyncClien
 
     # Switch should succeed
     resp = await client.put(
-        f"/api/games/{game_id}/active-character",
+        f"/api/games/{game_id}/characters/active",
         json={"patient_id": second_id},
         headers=pl["headers"],
     )
@@ -302,7 +302,7 @@ async def test_switch_character_dm_allowed(client: AsyncClient):
     )
 
     resp = await client.put(
-        f"/api/games/{game_id}/active-character",
+        f"/api/games/{game_id}/characters/active",
         json={"patient_id": patient_id},
         headers=kp["headers"],
     )
@@ -326,7 +326,7 @@ async def test_switch_character_wrong_patient(client: AsyncClient):
 
     # PL tries to switch to other's patient
     resp = await client.put(
-        f"/api/games/{game_id}/active-character",
+        f"/api/games/{game_id}/characters/active",
         json={"patient_id": other_patient_id},
         headers=pl["headers"],
     )
