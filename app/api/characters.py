@@ -273,50 +273,21 @@ async def unlock_archive(
     return unlock_result
 
 
-# --- Character by ID (dynamic path — MUST come after all static /characters/* routes) ---
+# --- Patient by ID (dynamic path — MUST come after all static /characters/* routes) ---
 
-@router.get("/characters/{character_id}")
-async def get_character(
+@router.get("/characters/{patient_id}")
+async def get_patient(
     game_id: str,
-    character_id: str,
+    patient_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    ghost = await character.get_ghost(db, character_id)
-    if ghost:
-        abilities = await character.get_print_abilities(db, ghost.id)
-        return {
-            "type": "ghost",
-            "id": ghost.id,
-            "name": ghost.name,
-            "cmyk": json.loads(ghost.cmyk_json),
-            "hp": ghost.hp,
-            "hp_max": ghost.hp_max,
-            "appearance": ghost.appearance,
-            "personality": ghost.personality,
-            "print_abilities": [
-                {"id": a.id, "name": a.name, "color": a.color, "ability_count": a.ability_count}
-                for a in abilities
-            ],
-            "current_patient_id": ghost.current_patient_id,
-            "origin_patient_id": ghost.origin_patient_id,
-            "origin_snapshot": {
-                "origin_name": ghost.origin_name,
-                "origin_identity": ghost.origin_identity,
-                "origin_soul_color": ghost.origin_soul_color,
-                "origin_ideal_projection": ghost.origin_ideal_projection,
-                "origin_archives": json.loads(ghost.origin_archives_json) if ghost.origin_archives_json else None,
-            },
-            "unlock_state": {
-                "archive_unlock": json.loads(ghost.archive_unlock_json),
-                "origin_name_unlocked": ghost.origin_name_unlocked,
-                "origin_identity_unlocked": ghost.origin_identity_unlocked,
-            },
-        }
-    patient = await character.get_patient(db, character_id)
-    if patient:
-        return {
-            "type": "patient",
+    patient = await character.get_patient(db, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    result: dict = {
+        "patient": {
             "id": patient.id,
             "name": patient.name,
             "soul_color": patient.soul_color,
@@ -325,20 +296,50 @@ async def get_character(
             "identity": patient.identity,
             "current_region_id": patient.current_region_id,
             "current_location_id": patient.current_location_id,
+        },
+    }
+
+    ghost_result = await db.execute(
+        select(Ghost).where(Ghost.current_patient_id == patient.id)
+    )
+    ghost = ghost_result.scalar_one_or_none()
+    if ghost:
+        abilities = await character.get_print_abilities(db, ghost.id)
+        buffs = await buff_mod.get_buffs(db, ghost.id)
+        result["ghost"] = {
+            "id": ghost.id,
+            "name": ghost.name,
+            "cmyk": json.loads(ghost.cmyk_json),
+            "hp": ghost.hp,
+            "hp_max": ghost.hp_max,
+            "mp": ghost.mp,
+            "mp_max": ghost.mp_max,
+            "appearance": ghost.appearance,
+            "personality": ghost.personality,
+            "print_abilities": [
+                {"id": a.id, "name": a.name, "color": a.color, "ability_count": a.ability_count}
+                for a in abilities
+            ],
+            "buffs": [
+                {"id": b.id, "name": b.name, "expression": b.expression, "remaining_rounds": b.remaining_rounds}
+                for b in buffs
+            ],
+            "origin_data": character.get_unlocked_origin_data(ghost),
         }
-    raise HTTPException(status_code=404, detail="Character not found")
+
+    return result
 
 
-@router.delete("/characters/{character_id}")
-async def delete_character(
+@router.delete("/characters/{patient_id}")
+async def delete_patient_endpoint(
     game_id: str,
-    character_id: str,
+    patient_id: str,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    patient = await character.get_patient(db, character_id)
+    patient = await character.get_patient(db, patient_id)
     if patient is None:
-        raise HTTPException(status_code=404, detail="Character not found")
+        raise HTTPException(status_code=404, detail="Patient not found")
     is_owner = patient.user_id == acting_user_id
     is_dm = False
     try:
@@ -349,10 +350,10 @@ async def delete_character(
     if not is_owner and not is_dm:
         raise HTTPException(status_code=403, detail="Only DM or character owner can delete")
     try:
-        await character.delete_patient(db, character_id)
+        await character.delete_patient(db, patient_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"deleted": character_id}
+    return {"deleted": patient_id}
 
 
 # --- Ghost sub-resources ---

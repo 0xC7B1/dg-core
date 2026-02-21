@@ -115,8 +115,9 @@ async def test_get_character(client: AsyncClient):
 
     resp = await client.get(f"/api/games/{gid}/characters/{patient_id}", headers=h)
     assert resp.status_code == 200
-    assert resp.json()["type"] == "patient"
-    assert resp.json()["name"] == "患者A"
+    assert resp.json()["patient"]["id"] == patient_id
+    assert resp.json()["patient"]["name"] == "患者A"
+    assert "ghost" not in resp.json()  # no companion assigned
 
 
 @pytest.mark.asyncio
@@ -455,11 +456,11 @@ async def test_unlock_archive_with_fragment(client: AsyncClient):
     # let's test unlock_archive at the domain level instead by calling the endpoint
     # with a properly set up ghost. We'll create a dedicated patient+ghost pair.
 
-    # For this test, let's directly test the admin character endpoint which shows unlock state
-    char_resp = await client.get(f"/api/games/{game_id}/characters/{ghost_id}", headers=kp["headers"])
+    # For this test, let's directly test the character endpoint which shows unlock state
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=kp["headers"])
     assert char_resp.status_code == 200
-    unlock_before = char_resp.json()["unlock_state"]["archive_unlock"]
-    assert unlock_before["C"] is False  # Not yet unlocked
+    # Ghost not yet assigned as companion — unlock state not visible from this endpoint
+    assert "ghost" not in char_resp.json()
 
     # End session so we're in a clean state for checking
     await client.post("/api/events", json={
@@ -609,9 +610,9 @@ async def test_region_transition_sets_patient_position(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["success"] is True
 
-    # Verify patient has the position via admin character endpoint
+    # Verify patient has the position via character endpoint
     char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
-    assert char_resp.json()["current_region_id"] == region_id
+    assert char_resp.json()["patient"]["current_region_id"] == region_id
 
 
 @pytest.mark.asyncio

@@ -192,7 +192,7 @@ async def test_list_characters_empty(client: AsyncClient):
     assert resp.json()["characters"] == []
 
 
-# --- DELETE /characters/{character_id} ---
+# --- DELETE /characters/{patient_id} ---
 
 @pytest.mark.asyncio
 async def test_delete_character_owner(client: AsyncClient):
