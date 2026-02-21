@@ -13,7 +13,6 @@ from app.api import (
     characters,
     dice,
     events,
-    game_timeline,
     games,
     items,
     rag,
@@ -124,7 +123,6 @@ app.include_router(characters.router)
 app.include_router(sessions.router)
 app.include_router(regions.router)
 app.include_router(items.router)
-app.include_router(game_timeline.router)
 app.include_router(dice.router)
 app.include_router(ws.router)
 app.include_router(rag.router)
