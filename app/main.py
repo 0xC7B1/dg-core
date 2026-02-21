@@ -11,6 +11,7 @@ from app.admin import setup_admin
 from app.api import auth
 from app.api import (
     characters,
+    communications,
     dice,
     events,
     games,
@@ -120,6 +121,7 @@ app.include_router(auth.router)
 app.include_router(events.router)
 app.include_router(games.router)
 app.include_router(characters.router)
+app.include_router(communications.router)
 app.include_router(sessions.router)
 app.include_router(regions.router)
 app.include_router(items.router)
