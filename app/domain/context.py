@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import character, region as region_mod
+from app.domain import character, world as region_mod
 from app.modules.memory.short_term import short_term_memory
 
 

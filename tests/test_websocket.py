@@ -47,7 +47,7 @@ def test_ws_reject_missing_token():
 
     client = TestClient(app)
     with pytest.raises(Exception):
-        with client.websocket_connect("/api/web/ws/game123"):
+        with client.websocket_connect("/api/ws/game123"):
             pass
 
 
@@ -57,7 +57,7 @@ def test_ws_reject_invalid_token():
 
     client = TestClient(app)
     with pytest.raises(Exception):
-        with client.websocket_connect("/api/web/ws/game123?token=bad.token.here"):
+        with client.websocket_connect("/api/ws/game123?token=bad.token.here"):
             pass
 
 
@@ -69,7 +69,7 @@ def test_ws_connect_valid_token():
     token_resp = create_access_token("test-user-ws")
     client = TestClient(app)
     with client.websocket_connect(
-        f"/api/web/ws/game_ws_test?token={token_resp.access_token}"
+        f"/api/ws/game_ws_test?token={token_resp.access_token}"
     ) as _ws:
         connected = ws_manager.get_connected_users("game_ws_test")
         assert "test-user-ws" in connected

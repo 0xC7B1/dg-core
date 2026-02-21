@@ -34,7 +34,7 @@ async def test_register_user(client: AsyncClient):
 async def test_create_game(client: AsyncClient):
     user = await register_user(client, "KP", "discord", "kp001")
 
-    resp = await client.post("/api/admin/games", json={
+    resp = await client.post("/api/games", json={
         "name": "Test Game",
     }, headers=user["headers"])
     assert resp.status_code == 200
@@ -48,15 +48,14 @@ async def test_create_patient_and_ghost(client: AsyncClient):
     user1 = await register_user(client, "Player1", "discord", "pl001")
     user2 = await register_user(client, "Player2", "discord", "pl002")
 
-    game_resp = await client.post("/api/admin/games", json={
+    game_resp = await client.post("/api/games", json={
         "name": "CharTest",
     }, headers=user1["headers"])
     game_id = game_resp.json()["game_id"]
 
     # Create patient
-    patient_resp = await client.post("/api/admin/characters/patient", json={
+    patient_resp = await client.post(f"/api/games/{game_id}/characters/patients", json={
         "user_id": user1["user_id"],
-        "game_id": game_id,
         "name": "测试患者",
         "soul_color": "C",
         "gender": "男",
@@ -75,10 +74,9 @@ async def test_create_patient_and_ghost(client: AsyncClient):
     assert "M" not in patient_data["swap_file"]["revealed_archive"]
 
     # Create ghost
-    ghost_resp = await client.post("/api/admin/characters/ghost", json={
+    ghost_resp = await client.post(f"/api/games/{game_id}/characters/ghosts", json={
         "origin_patient_id": patient_data["patient_id"],
         "creator_user_id": user2["user_id"],
-        "game_id": game_id,
         "name": "测试幽灵",
         "soul_color": "C",
         "appearance": "数字蓝色光影形态",
@@ -108,14 +106,14 @@ async def test_get_character(client: AsyncClient):
     user = await register_user(client, "P1", "web", "u1")
     h = user["headers"]
 
-    g = await client.post("/api/admin/games", json={"name": "G1"}, headers=h)
+    g = await client.post("/api/games", json={"name": "G1"}, headers=h)
     gid = g.json()["game_id"]
-    pat = await client.post("/api/admin/characters/patient", json={
-        "user_id": user["user_id"], "game_id": gid, "name": "患者A", "soul_color": "M",
+    pat = await client.post(f"/api/games/{gid}/characters/patients", json={
+        "user_id": user["user_id"], "name": "患者A", "soul_color": "M",
     }, headers=h)
     patient_id = pat.json()["patient_id"]
 
-    resp = await client.get(f"/api/admin/characters/{patient_id}", headers=h)
+    resp = await client.get(f"/api/games/{gid}/characters/{patient_id}", headers=h)
     assert resp.status_code == 200
     assert resp.json()["type"] == "patient"
     assert resp.json()["name"] == "患者A"
@@ -124,13 +122,13 @@ async def test_get_character(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_game_not_found(client: AsyncClient):
     user = await register_user(client, "U", "test", "nf1")
-    resp = await client.get("/api/bot/games/nonexistent", headers=user["headers"])
+    resp = await client.get("/api/games/nonexistent", headers=user["headers"])
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_unauthenticated_request(client: AsyncClient):
-    resp = await client.post("/api/admin/games", json={"name": "Nope"})
+    resp = await client.post("/api/games", json={"name": "Nope"})
     assert resp.status_code in (401, 403)
 
 
@@ -139,26 +137,26 @@ async def test_region_crud(client: AsyncClient):
     user = await register_user(client, "RegionKP", "qq", "r1")
     h = user["headers"]
 
-    g = await client.post("/api/admin/games", json={"name": "RegionTest"}, headers=h)
+    g = await client.post("/api/games", json={"name": "RegionTest"}, headers=h)
     game_id = g.json()["game_id"]
 
-    r1 = await client.post(f"/api/admin/games/{game_id}/regions", json={
+    r1 = await client.post(f"/api/games/{game_id}/regions", json={
         "code": "A", "name": "数据荒原",
     }, headers=h)
     assert r1.status_code == 200
     assert r1.json()["code"] == "A"
 
-    r2 = await client.post(f"/api/admin/games/{game_id}/regions", json={
+    r2 = await client.post(f"/api/games/{game_id}/regions", json={
         "code": "B", "name": "信号塔区",
     }, headers=h)
     assert r2.status_code == 200
 
-    regions = await client.get(f"/api/admin/games/{game_id}/regions", headers=h)
+    regions = await client.get(f"/api/games/{game_id}/regions", headers=h)
     assert regions.status_code == 200
     assert len(regions.json()["regions"]) == 2
 
     region_a_id = r1.json()["region_id"]
-    loc = await client.post(f"/api/admin/regions/{region_a_id}/locations", json={
+    loc = await client.post(f"/api/games/{game_id}/regions/{region_a_id}/locations", json={
         "name": "数据废墟",
         "description": "一片荒废的数据存储设施",
         "content": "这里曾经是灰山城最大的数据中心...",
@@ -166,7 +164,7 @@ async def test_region_crud(client: AsyncClient):
     assert loc.status_code == 200
     assert loc.json()["name"] == "数据废墟"
 
-    locs = await client.get(f"/api/admin/regions/{region_a_id}/locations", headers=h)
+    locs = await client.get(f"/api/games/{game_id}/regions/{region_a_id}/locations", headers=h)
     assert locs.status_code == 200
     assert len(locs.json()["locations"]) == 1
 
@@ -179,13 +177,13 @@ async def _setup_game_with_player(client: AsyncClient):
     kp = await register_user(client, "KP", "test", "kp_sc")
     pl = await register_user(client, "PL", "test", "pl_sc")
 
-    game_resp = await client.post("/api/admin/games", json={
+    game_resp = await client.post("/api/games", json={
         "name": "SwitchCharGame",
     }, headers=kp["headers"])
     game_id = game_resp.json()["game_id"]
 
     # Add PL to game
-    await client.post(f"/api/admin/games/{game_id}/players", json={
+    await client.post(f"/api/games/{game_id}/players", json={
         "user_id": pl["user_id"], "role": "PL",
     }, headers=kp["headers"])
 
@@ -194,8 +192,8 @@ async def _setup_game_with_player(client: AsyncClient):
 
 async def _create_patient_for(client: AsyncClient, headers: dict, user_id: str, game_id: str, name: str):
     """Helper: create a patient and return patient_id."""
-    resp = await client.post("/api/admin/characters/patient", json={
-        "user_id": user_id, "game_id": game_id, "name": name, "soul_color": "C",
+    resp = await client.post(f"/api/games/{game_id}/characters/patients", json={
+        "user_id": user_id, "name": name, "soul_color": "C",
     }, headers=headers)
     assert resp.status_code == 200
     return resp.json()["patient_id"]
@@ -211,7 +209,7 @@ async def test_auto_activate_first_patient(client: AsyncClient):
     )
 
     # Check game response includes active_patient_id
-    game_resp = await client.get(f"/api/bot/games/{game_id}", headers=pl["headers"])
+    game_resp = await client.get(f"/api/games/{game_id}", headers=pl["headers"])
     players = game_resp.json()["players"]
     pl_data = next(p for p in players if p["user_id"] == pl["user_id"])
     assert pl_data["active_patient_id"] == patient_id
@@ -229,7 +227,7 @@ async def test_auto_activate_does_not_overwrite(client: AsyncClient):
         client, pl["headers"], pl["user_id"], game_id, "患者二号"
     )
 
-    game_resp = await client.get(f"/api/bot/games/{game_id}", headers=pl["headers"])
+    game_resp = await client.get(f"/api/games/{game_id}", headers=pl["headers"])
     pl_data = next(
         p for p in game_resp.json()["players"] if p["user_id"] == pl["user_id"]
     )
@@ -250,7 +248,7 @@ async def test_switch_character_success(client: AsyncClient):
 
     # Switch to second character
     resp = await client.put(
-        f"/api/bot/games/{game_id}/active-character",
+        f"/api/games/{game_id}/active-character",
         json={"patient_id": second_id},
         headers=pl["headers"],
     )
@@ -258,7 +256,7 @@ async def test_switch_character_success(client: AsyncClient):
     assert resp.json()["active_patient_id"] == second_id
 
     # Verify via game endpoint
-    game_resp = await client.get(f"/api/bot/games/{game_id}", headers=pl["headers"])
+    game_resp = await client.get(f"/api/games/{game_id}", headers=pl["headers"])
     pl_data = next(
         p for p in game_resp.json()["players"] if p["user_id"] == pl["user_id"]
     )
@@ -278,7 +276,7 @@ async def test_switch_character_allowed_during_active_session(client: AsyncClien
     )
 
     # Start a session via event
-    await client.post("/api/bot/events", json={
+    await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": kp["user_id"],
         "payload": {"event_type": "session_start"},
@@ -286,7 +284,7 @@ async def test_switch_character_allowed_during_active_session(client: AsyncClien
 
     # Switch should succeed
     resp = await client.put(
-        f"/api/bot/games/{game_id}/active-character",
+        f"/api/games/{game_id}/active-character",
         json={"patient_id": second_id},
         headers=pl["headers"],
     )
@@ -304,7 +302,7 @@ async def test_switch_character_dm_allowed(client: AsyncClient):
     )
 
     resp = await client.put(
-        f"/api/bot/games/{game_id}/active-character",
+        f"/api/games/{game_id}/active-character",
         json={"patient_id": patient_id},
         headers=kp["headers"],
     )
@@ -319,7 +317,7 @@ async def test_switch_character_wrong_patient(client: AsyncClient):
     other = await register_user(client, "Other", "test", "other_sc")
 
     # Add other player and create their patient
-    await client.post(f"/api/admin/games/{game_id}/players", json={
+    await client.post(f"/api/games/{game_id}/players", json={
         "user_id": other["user_id"], "role": "PL",
     }, headers=kp["headers"])
     other_patient_id = await _create_patient_for(
@@ -328,7 +326,7 @@ async def test_switch_character_wrong_patient(client: AsyncClient):
 
     # PL tries to switch to other's patient
     resp = await client.put(
-        f"/api/bot/games/{game_id}/active-character",
+        f"/api/games/{game_id}/active-character",
         json={"patient_id": other_patient_id},
         headers=pl["headers"],
     )
@@ -345,20 +343,19 @@ async def _setup_ghost_with_patient(client: AsyncClient):
     pl = await register_user(client, "PL_g", "test", "pl_ghost")
     creator = await register_user(client, "Creator_g", "test", "cr_ghost")
 
-    game_resp = await client.post("/api/admin/games", json={
+    game_resp = await client.post("/api/games", json={
         "name": "GhostTestGame",
     }, headers=kp["headers"])
     game_id = game_resp.json()["game_id"]
 
     # Add PL to game
-    await client.post(f"/api/admin/games/{game_id}/players", json={
+    await client.post(f"/api/games/{game_id}/players", json={
         "user_id": pl["user_id"], "role": "PL",
     }, headers=kp["headers"])
 
     # Create patient with full archives
-    patient_resp = await client.post("/api/admin/characters/patient", json={
+    patient_resp = await client.post(f"/api/games/{game_id}/characters/patients", json={
         "user_id": pl["user_id"],
-        "game_id": game_id,
         "name": "原始患者",
         "soul_color": "M",
         "identity": "前研究员",
@@ -373,10 +370,9 @@ async def _setup_ghost_with_patient(client: AsyncClient):
     patient_id = patient_resp.json()["patient_id"]
 
     # Create ghost from patient
-    ghost_resp = await client.post("/api/admin/characters/ghost", json={
+    ghost_resp = await client.post(f"/api/games/{game_id}/characters/ghosts", json={
         "origin_patient_id": patient_id,
         "creator_user_id": creator["user_id"],
-        "game_id": game_id,
         "name": "测试幽灵",
         "soul_color": "M",
     }, headers=creator["headers"])
@@ -415,18 +411,18 @@ async def test_unlock_archive_with_fragment(client: AsyncClient):
     ghost_id = ghost_data["ghost_id"]
 
     # Start game + session so we can submit events
-    await client.post("/api/bot/events", json={
+    await client.post("/api/events", json={
         "game_id": game_id, "user_id": kp["user_id"],
         "payload": {"event_type": "game_start"},
     }, headers=kp["headers"])
-    sess_resp = await client.post("/api/bot/events", json={
+    sess_resp = await client.post("/api/events", json={
         "game_id": game_id, "user_id": kp["user_id"],
         "payload": {"event_type": "session_start"},
     }, headers=kp["headers"])
     session_id = sess_resp.json()["data"]["session_id"]
 
     # Apply a C color fragment via dispatcher
-    frag_resp = await client.post("/api/bot/events", json={
+    frag_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "session_id": session_id,
         "user_id": pl["user_id"],
@@ -460,13 +456,13 @@ async def test_unlock_archive_with_fragment(client: AsyncClient):
     # with a properly set up ghost. We'll create a dedicated patient+ghost pair.
 
     # For this test, let's directly test the admin character endpoint which shows unlock state
-    char_resp = await client.get(f"/api/admin/characters/{ghost_id}", headers=kp["headers"])
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{ghost_id}", headers=kp["headers"])
     assert char_resp.status_code == 200
     unlock_before = char_resp.json()["unlock_state"]["archive_unlock"]
     assert unlock_before["C"] is False  # Not yet unlocked
 
     # End session so we're in a clean state for checking
-    await client.post("/api/bot/events", json={
+    await client.post("/api/events", json={
         "game_id": game_id, "session_id": session_id,
         "user_id": kp["user_id"],
         "payload": {"event_type": "session_end"},
@@ -590,14 +586,14 @@ async def test_region_transition_sets_patient_position(client: AsyncClient):
     h_pl = pl["headers"]
 
     # Create game + add PL
-    g = await client.post("/api/admin/games", json={"name": "RegTransGame"}, headers=h_kp)
+    g = await client.post("/api/games", json={"name": "RegTransGame"}, headers=h_kp)
     game_id = g.json()["game_id"]
-    await client.post(f"/api/admin/games/{game_id}/players", json={
+    await client.post(f"/api/games/{game_id}/players", json={
         "user_id": pl["user_id"], "role": "PL",
     }, headers=h_kp)
 
     # Create region + patient
-    r = await client.post(f"/api/admin/games/{game_id}/regions", json={
+    r = await client.post(f"/api/games/{game_id}/regions", json={
         "code": "A", "name": "区域A",
     }, headers=h_kp)
     region_id = r.json()["region_id"]
@@ -605,7 +601,7 @@ async def test_region_transition_sets_patient_position(client: AsyncClient):
     patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "位移患者")
 
     # Move to region A
-    resp = await client.post("/api/bot/events", json={
+    resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": pl["user_id"],
         "payload": {"event_type": "region_transition", "target_region_id": region_id},
@@ -614,15 +610,15 @@ async def test_region_transition_sets_patient_position(client: AsyncClient):
     assert resp.json()["success"] is True
 
     # Verify patient has the position via admin character endpoint
-    char_resp = await client.get(f"/api/admin/characters/{patient_id}", headers=h_pl)
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
     assert char_resp.json()["current_region_id"] == region_id
 
 
 @pytest.mark.asyncio
 async def test_hybrid_resolution_by_session_region(db_session):
     """Session with region_id resolves the player's patient in that region."""
-    from app.domain import character, region as region_mod, session as session_mod
-    from app.domain.dispatcher import _resolve_patient_for_event
+    from app.domain import character, world as region_mod, session as session_mod
+    from app.domain.resolution import resolve_patient_for_event
     from app.models.db_models import Game, GamePlayer, User
     from app.models.event import GameEvent, EventCheckPayload
 
@@ -665,7 +661,7 @@ async def test_hybrid_resolution_by_session_region(db_session):
         session_id=session.id,
         payload=EventCheckPayload(event_type="event_check", event_name="test", color="M"),
     )
-    resolved = await _resolve_patient_for_event(db, event)
+    resolved = await resolve_patient_for_event(db, event)
     assert resolved is not None
     assert resolved.id == patient_b.id
 
@@ -675,7 +671,7 @@ async def test_hybrid_resolution_by_session_region(db_session):
         user_id=user.id,
         payload=EventCheckPayload(event_type="event_check", event_name="test", color="C"),
     )
-    resolved_fallback = await _resolve_patient_for_event(db, event_no_session)
+    resolved_fallback = await resolve_patient_for_event(db, event_no_session)
     assert resolved_fallback is not None
     assert resolved_fallback.id == patient_a.id
 
@@ -683,8 +679,8 @@ async def test_hybrid_resolution_by_session_region(db_session):
 @pytest.mark.asyncio
 async def test_session_region_rejects_wrong_region(db_session):
     """Event in a session rejects if no patient is in the session's region."""
-    from app.domain import character, region as region_mod, session as session_mod
-    from app.domain.dispatcher import _resolve_patient_for_event
+    from app.domain import character, world as region_mod, session as session_mod
+    from app.domain.resolution import resolve_patient_for_event
     from app.models.db_models import Game, GamePlayer, User
     from app.models.event import GameEvent, EventCheckPayload
 
@@ -719,5 +715,5 @@ async def test_session_region_rejects_wrong_region(db_session):
         session_id=session.id,
         payload=EventCheckPayload(event_type="event_check", event_name="test", color="C"),
     )
-    resolved = await _resolve_patient_for_event(db, event)
+    resolved = await resolve_patient_for_event(db, event)
     assert resolved is None  # No patient in region B

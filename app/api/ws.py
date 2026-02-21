@@ -1,4 +1,4 @@
-"""Web API — WebSocket real-time game updates."""
+"""WebSocket API — real-time game updates."""
 
 from __future__ import annotations
 
@@ -10,23 +10,14 @@ from app.infra.db import async_session_factory
 from app.infra.ws_manager import ws_manager
 from app.models.event import GameEvent
 
-router = APIRouter(prefix="/api/web", tags=["web"])
-
-
-@router.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "message": "Web API active."}
+router = APIRouter(prefix="/api", tags=["websocket"])
 
 
 @router.websocket("/ws/{game_id}")
 async def websocket_game(websocket: WebSocket, game_id: str) -> None:
     """WebSocket endpoint for real-time game updates.
 
-    Connect with: ws://host/api/web/ws/{game_id}?token=<jwt_token>
-
-    On connect: authenticates via query param token, joins game room.
-    Receives: JSON game events (same format as POST /api/bot/events payload field).
-    Sends: EngineResult JSON for all events in the game.
+    Connect with: ws://host/api/ws/{game_id}?token=<jwt_token>
     """
     token = websocket.query_params.get("token")
     if not token:

@@ -20,7 +20,7 @@ class EventType(str, Enum):
     SESSION_START = "session_start"
     SESSION_END = "session_end"
 
-    # Event check system (replaces skill_check)
+    # Event check system
     EVENT_CHECK = "event_check"
     REROLL = "reroll"
     HARD_REROLL = "hard_reroll"
@@ -43,6 +43,15 @@ class EventType(str, Enum):
     HP_CHANGE = "hp_change"
     REGION_TRANSITION = "region_transition"
     LOCATION_TRANSITION = "location_transition"
+
+    # DM management events
+    BUFF_ADD = "buff_add"
+    BUFF_REMOVE = "buff_remove"
+    ITEM_GRANT = "item_grant"
+    EVENT_DEFINE = "event_define"
+    EVENT_DEACTIVATE = "event_deactivate"
+    ATTRIBUTE_SET = "attribute_set"
+    ABILITY_ADD = "ability_add"
 
 
 # --- Payload models ---
@@ -171,6 +180,57 @@ class LocationTransitionPayload(BaseModel):
     target_location_id: str
 
 
+# --- DM management payloads ---
+
+
+class BuffAddPayload(BaseModel):
+    event_type: Literal["buff_add"] = "buff_add"
+    ghost_id: str
+    name: str
+    expression: str
+    remaining_rounds: int = 1
+
+
+class BuffRemovePayload(BaseModel):
+    event_type: Literal["buff_remove"] = "buff_remove"
+    buff_id: str
+
+
+class ItemGrantPayload(BaseModel):
+    event_type: Literal["item_grant"] = "item_grant"
+    patient_id: str
+    item_def_id: str
+    count: int = 1
+
+
+class EventDefinePayload(BaseModel):
+    event_type: Literal["event_define"] = "event_define"
+    name: str
+    expression: str
+    color_restriction: str | None = None
+
+
+class EventDeactivatePayload(BaseModel):
+    event_type: Literal["event_deactivate"] = "event_deactivate"
+    event_def_id: str
+
+
+class AttributeSetPayload(BaseModel):
+    event_type: Literal["attribute_set"] = "attribute_set"
+    ghost_id: str
+    attribute: str  # hp, mp, hp_max, mp_max, cmyk.C/M/Y/K
+    value: int
+
+
+class AbilityAddPayload(BaseModel):
+    event_type: Literal["ability_add"] = "ability_add"
+    ghost_id: str
+    name: str
+    description: str = ""
+    color: str  # C/M/Y/K
+    ability_count: int = 1
+
+
 EventPayload = Annotated[
     Union[
         GameStartPayload,
@@ -193,6 +253,13 @@ EventPayload = Annotated[
         HPChangePayload,
         RegionTransitionPayload,
         LocationTransitionPayload,
+        BuffAddPayload,
+        BuffRemovePayload,
+        ItemGrantPayload,
+        EventDefinePayload,
+        EventDeactivatePayload,
+        AttributeSetPayload,
+        AbilityAddPayload,
     ],
     Field(discriminator="event_type"),
 ]

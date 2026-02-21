@@ -130,7 +130,7 @@ async def test_multi_platform_same_user(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_protected_endpoint_no_auth(client: AsyncClient):
-    resp = await client.post("/api/admin/games", json={"name": "NoAuth"})
+    resp = await client.post("/api/games", json={"name": "NoAuth"})
     assert resp.status_code in (401, 403)
 
 
@@ -138,7 +138,7 @@ async def test_protected_endpoint_no_auth(client: AsyncClient):
 async def test_api_key_header_auth(client: AsyncClient):
     user = await register_user(client, "ApiKeyH", "test", "akh_001")
     # Use X-API-Key header instead of Bearer token
-    resp = await client.post("/api/admin/games", json={
+    resp = await client.post("/api/games", json={
         "name": "ViaApiKey",
     }, headers={"X-API-Key": user["api_key"]})
     assert resp.status_code == 200
@@ -282,12 +282,12 @@ async def test_regenerate_api_key_via_jwt(client: AsyncClient):
     assert new_key != old_key
 
     # Old key should fail
-    resp = await client.post("/api/admin/games", json={"name": "OldKey"},
+    resp = await client.post("/api/games", json={"name": "OldKey"},
                              headers={"X-API-Key": old_key})
     assert resp.status_code == 401
 
     # New key should work
-    resp = await client.post("/api/admin/games", json={"name": "NewKey"},
+    resp = await client.post("/api/games", json={"name": "NewKey"},
                              headers={"X-API-Key": new_key})
     assert resp.status_code == 200
 
@@ -327,12 +327,12 @@ async def test_bot_proxy_submit_event(client: AsyncClient):
     player = await register_user(client, "ProxyPlayer", "qq", "proxy_002")
 
     # Bot creates a game
-    game_resp = await client.post("/api/admin/games", json={"name": "ProxyGame"},
+    game_resp = await client.post("/api/games", json={"name": "ProxyGame"},
                                   headers={"X-API-Key": bot["api_key"]})
     game_id = game_resp.json()["game_id"]
 
     # Bot submits player_join on behalf of player (bot's API key, player's user_id)
-    resp = await client.post("/api/bot/events", json={
+    resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": player["user_id"],
         "payload": {"event_type": "player_join", "role": "PL"},

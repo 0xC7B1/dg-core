@@ -32,32 +32,31 @@ async def test_full_game_flow(client: AsyncClient):
     pl_h = pl["headers"]
 
     # 2. Create game
-    game_resp = await client.post("/api/admin/games", json={
+    game_resp = await client.post("/api/games", json={
         "name": "灰山城第一章·信号裂痕",
         "config": {"dice_type": 6, "initial_hp": 10},
     }, headers=kp_h)
     game_id = game_resp.json()["game_id"]
 
     # 3. PL joins game
-    join_resp = await client.post(f"/api/admin/games/{game_id}/players", json={
+    join_resp = await client.post(f"/api/games/{game_id}/players", json={
         "user_id": pl["user_id"], "role": "PL",
     }, headers=kp_h)
     assert join_resp.status_code == 200
 
-    await client.post(f"/api/admin/games/{game_id}/players", json={
+    await client.post(f"/api/games/{game_id}/players", json={
         "user_id": pl2["user_id"], "role": "PL",
     }, headers=kp_h)
 
     # 4. Create regions
-    region_resp = await client.post(f"/api/admin/games/{game_id}/regions", json={
+    region_resp = await client.post(f"/api/games/{game_id}/regions", json={
         "code": "A", "name": "数据荒原",
     }, headers=kp_h)
     assert region_resp.status_code == 200
 
     # 5. Create patient + ghost
-    patient_resp = await client.post("/api/admin/characters/patient", json={
+    patient_resp = await client.post(f"/api/games/{game_id}/characters/patients", json={
         "user_id": pl["user_id"],
-        "game_id": game_id,
         "name": "林默",
         "soul_color": "C",
         "gender": "男",
@@ -75,10 +74,9 @@ async def test_full_game_flow(client: AsyncClient):
     swap = patient_resp.json()["swap_file"]
     assert swap["soul_color"] == "C"
 
-    ghost_resp = await client.post("/api/admin/characters/ghost", json={
+    ghost_resp = await client.post(f"/api/games/{game_id}/characters/ghosts", json={
         "origin_patient_id": patient_id,
         "creator_user_id": pl2["user_id"],
-        "game_id": game_id,
         "name": "Echo",
         "soul_color": "C",
         "appearance": "半透明的蓝色人形光影，周身环绕着飘浮的数据碎片",
@@ -96,33 +94,32 @@ async def test_full_game_flow(client: AsyncClient):
     assert ghost_resp.json()["cmyk"]["C"] == 1
 
     # Assign ghost as companion to the patient
-    assign_resp = await client.put(f"/api/admin/characters/ghost/{ghost_id}/assign-companion", json={
+    assign_resp = await client.put(f"/api/games/{game_id}/ghosts/{ghost_id}/companion", json={
         "patient_id": patient_id,
     }, headers=kp_h)
     assert assign_resp.status_code == 200
 
     # Also create a second patient+ghost as target
-    p2_patient = await client.post("/api/admin/characters/patient", json={
-        "user_id": pl2["user_id"], "game_id": game_id, "name": "敌方实体", "soul_color": "M",
+    p2_patient = await client.post(f"/api/games/{game_id}/characters/patients", json={
+        "user_id": pl2["user_id"], "name": "敌方实体", "soul_color": "M",
     }, headers=pl2["headers"])
     target_patient_id = p2_patient.json()["patient_id"]
 
-    target_ghost = await client.post("/api/admin/characters/ghost", json={
+    target_ghost = await client.post(f"/api/games/{game_id}/characters/ghosts", json={
         "origin_patient_id": target_patient_id,
         "creator_user_id": pl["user_id"],
-        "game_id": game_id,
         "name": "Glitch",
         "soul_color": "M",
     }, headers=pl_h)
     target_ghost_id = target_ghost.json()["ghost_id"]
 
     # Assign target ghost as companion to the target patient
-    await client.put(f"/api/admin/characters/ghost/{target_ghost_id}/assign-companion", json={
+    await client.put(f"/api/games/{game_id}/ghosts/{target_ghost_id}/companion", json={
         "patient_id": target_patient_id,
     }, headers=kp_h)
 
     # 6. Start game
-    start_game_resp = await client.post("/api/bot/events", json={
+    start_game_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": kp["user_id"],
         "payload": {"event_type": "game_start"},
@@ -132,11 +129,11 @@ async def test_full_game_flow(client: AsyncClient):
     assert start_game_resp.json()["data"]["status"] == "active"
 
     # Verify game is active
-    game_info = await client.get(f"/api/bot/games/{game_id}", headers=kp_h)
+    game_info = await client.get(f"/api/games/{game_id}", headers=kp_h)
     assert game_info.json()["status"] == "active"
 
     # 7. Start play session
-    session_start_resp = await client.post("/api/bot/events", json={
+    session_start_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": kp["user_id"],
         "payload": {"event_type": "session_start"},
@@ -147,14 +144,21 @@ async def test_full_game_flow(client: AsyncClient):
 
     # 8. Define event + event check
     # DM defines an event for the session
-    define_resp = await client.post(f"/api/bot/sessions/{session_id}/events/define", json={
+    define_resp = await client.post("/api/events", json={
         "game_id": game_id,
-        "name": "信号分析",
-        "expression": "2d6+3",
+        "session_id": session_id,
+        "user_id": kp["user_id"],
+        "payload": {
+            "event_type": "event_define",
+            "name": "信号分析",
+            "expression": "2d6+3",
+        },
     }, headers=kp_h)
     assert define_resp.status_code == 200
+    assert define_resp.json()["success"] is True
+    assert define_resp.json()["event_type"] == "event_define"
 
-    check_resp = await client.post("/api/bot/events", json={
+    check_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "session_id": session_id,
         "user_id": pl["user_id"],
@@ -172,7 +176,7 @@ async def test_full_game_flow(client: AsyncClient):
     assert "check_success" in check_data["data"]
 
     # 9. Attack
-    atk_resp = await client.post("/api/bot/events", json={
+    atk_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "session_id": session_id,
         "user_id": pl["user_id"],
@@ -191,7 +195,7 @@ async def test_full_game_flow(client: AsyncClient):
 
     # 10. Query timeline
     tl_resp = await client.get(
-        f"/api/bot/sessions/{session_id}/timeline", headers=kp_h
+        f"/api/sessions/{session_id}/timeline", headers=kp_h
     )
     assert tl_resp.status_code == 200
     events = tl_resp.json()["events"]
@@ -202,7 +206,7 @@ async def test_full_game_flow(client: AsyncClient):
     assert "attack" in event_types
 
     # 11. End session and game
-    end_session_resp = await client.post("/api/bot/events", json={
+    end_session_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "session_id": session_id,
         "user_id": kp["user_id"],
@@ -211,7 +215,7 @@ async def test_full_game_flow(client: AsyncClient):
     assert end_session_resp.status_code == 200
     assert end_session_resp.json()["data"]["status"] == "ended"
 
-    end_game_resp = await client.post("/api/bot/events", json={
+    end_game_resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": kp["user_id"],
         "payload": {"event_type": "game_end"},

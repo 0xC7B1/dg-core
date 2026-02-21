@@ -233,3 +233,128 @@ def _patient_ghost_summary(patient: Patient | None, ghost: Ghost | None) -> dict
             "mp_max": ghost.mp_max,
         }
     return result
+
+
+# --- Dispatcher integration: wrapper handlers + self-registration ---
+
+from app.domain.dispatcher import register_handler  # noqa: E402
+from app.domain.resolution import resolve_patient_for_event  # noqa: E402
+from app.domain.session import timeline  # noqa: E402
+from app.models.event import (  # noqa: E402
+    CommAcceptPayload,
+    CommCancelPayload,
+    CommRejectPayload,
+    CommRequestPayload,
+    GameEvent,
+)
+from app.models.result import EngineResult  # noqa: E402
+
+
+def _require_session(event: GameEvent) -> str:
+    if not event.session_id:
+        raise ValueError("session_id is required for this event type")
+    return event.session_id
+
+
+async def _dispatch_comm_request(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: CommRequestPayload = event.payload  # type: ignore[assignment]
+
+    patient = await resolve_patient_for_event(db, event)
+    if patient is None:
+        return EngineResult(
+            success=False, event_type="comm_request",
+            error="No active character found",
+        )
+
+    comm = await request_communication(
+        db,
+        game_id=event.game_id,
+        initiator_patient_id=patient.id,
+        target_patient_id=payload.target_patient_id,
+    )
+
+    await timeline.append_event(
+        db, session_id=sid, game_id=event.game_id,
+        event_type="comm_request", actor_id=event.user_id,
+        data={
+            "request_id": comm.id,
+            "target_patient_id": payload.target_patient_id,
+        },
+    )
+
+    return EngineResult(
+        success=True,
+        event_type="comm_request",
+        data={
+            "request_id": comm.id,
+            "initiator_patient_id": patient.id,
+            "target_patient_id": payload.target_patient_id,
+            "status": comm.status,
+        },
+    )
+
+
+async def _dispatch_comm_accept(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: CommAcceptPayload = event.payload  # type: ignore[assignment]
+
+    result_data = await accept_communication(
+        db, request_id=payload.request_id, ability_id=payload.ability_id
+    )
+
+    await timeline.append_event(
+        db, session_id=sid, game_id=event.game_id,
+        event_type="comm_accept", actor_id=event.user_id,
+        data={"request_id": payload.request_id},
+    )
+
+    return EngineResult(
+        success=True,
+        event_type="comm_accept",
+        data=result_data,
+    )
+
+
+async def _dispatch_comm_reject(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: CommRejectPayload = event.payload  # type: ignore[assignment]
+
+    comm = await reject_communication(db, payload.request_id)
+
+    await timeline.append_event(
+        db, session_id=sid, game_id=event.game_id,
+        event_type="comm_reject", actor_id=event.user_id,
+        data={"request_id": payload.request_id},
+    )
+
+    return EngineResult(
+        success=True,
+        event_type="comm_reject",
+        data={"request_id": comm.id, "status": comm.status},
+    )
+
+
+async def _dispatch_comm_cancel(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: CommCancelPayload = event.payload  # type: ignore[assignment]
+
+    comm = await cancel_communication(db, payload.request_id)
+
+    await timeline.append_event(
+        db, session_id=sid, game_id=event.game_id,
+        event_type="comm_cancel", actor_id=event.user_id,
+        data={"request_id": payload.request_id},
+    )
+
+    return EngineResult(
+        success=True,
+        event_type="comm_cancel",
+        data={"request_id": comm.id, "status": comm.status},
+    )
+
+
+register_handler("comm_request", _dispatch_comm_request)
+register_handler("comm_accept", _dispatch_comm_accept)
+register_handler("comm_reject", _dispatch_comm_reject)
+register_handler("comm_cancel", _dispatch_comm_cancel)

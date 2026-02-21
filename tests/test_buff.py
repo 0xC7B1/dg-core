@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.domain.buff import (
+from app.domain.character.buff import (
     add_buff,
     classify_expression,
     compute_buff_modifier,

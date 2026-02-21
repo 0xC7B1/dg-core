@@ -3,13 +3,15 @@
 import pytest
 
 from app.domain import character
-from app.domain.rules.event_check import (
+from app.domain.session.event_def import (
     deactivate_event,
     get_active_event,
     get_active_events,
+    set_event,
+)
+from app.domain.mechanics.checks import (
     handle_event_check,
     handle_reroll,
-    set_event,
 )
 from app.models.db_models import Game, GamePlayer, Ghost, Patient, User
 

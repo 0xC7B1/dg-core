@@ -3,7 +3,7 @@
 import pytest
 
 from app.domain import character
-from app.domain.communication import (
+from app.domain.mechanics.communication import (
     accept_communication,
     cancel_communication,
     get_pending_requests,

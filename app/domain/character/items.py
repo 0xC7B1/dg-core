@@ -7,7 +7,8 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import buff as buff_mod, character
+from app.domain import character
+from app.domain.character import buff as buff_mod
 from app.models.db_models import Ghost, ItemDefinition, PlayerItem
 from app.models.result import EngineResult, StateChange
 

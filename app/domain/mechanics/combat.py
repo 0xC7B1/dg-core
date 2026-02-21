@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import character, timeline
+from app.domain import character
+from app.domain.session import timeline
 from app.infra.config import settings
 from app.models.result import DiceRollResult, EngineResult, StateChange
 from app.modules.dice import roller
@@ -167,3 +168,59 @@ async def handle_defend(
         data=data,
         rolls=[roll_result],
     )
+
+
+# --- Dispatcher integration: wrapper handlers + self-registration ---
+
+from app.domain.dispatcher import register_handler  # noqa: E402
+from app.domain.mechanics.narration import enrich_result_with_narration  # noqa: E402
+from app.models.event import AttackPayload, DefendPayload, GameEvent  # noqa: E402
+
+
+def _require_session(event: GameEvent) -> str:
+    if not event.session_id:
+        raise ValueError("session_id is required for this event type")
+    return event.session_id
+
+
+async def _dispatch_attack(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: AttackPayload = event.payload  # type: ignore[assignment]
+
+    attacker = await character.get_ghost(db, payload.attacker_ghost_id)
+    target = await character.get_ghost(db, payload.target_ghost_id)
+
+    result = await handle_attack(
+        db,
+        game_id=event.game_id,
+        session_id=sid,
+        user_id=event.user_id,
+        attacker_ghost_id=payload.attacker_ghost_id,
+        target_ghost_id=payload.target_ghost_id,
+        color_used=payload.color_used,
+    )
+
+    if attacker and target:
+        result = await enrich_result_with_narration(
+            db, event.game_id, result,
+            attacker_name=attacker.name,
+            target_name=target.name,
+        )
+    return result
+
+
+async def _dispatch_defend(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: DefendPayload = event.payload  # type: ignore[assignment]
+    return await handle_defend(
+        db,
+        game_id=event.game_id,
+        session_id=sid,
+        user_id=event.user_id,
+        defender_ghost_id=payload.defender_ghost_id,
+        color_used=payload.color_used,
+    )
+
+
+register_handler("attack", _dispatch_attack)
+register_handler("defend", _dispatch_defend)

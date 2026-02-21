@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.domain.inventory import (
+from app.domain.character.items import (
     create_item_definition,
     get_inventory,
     get_item_definitions,
@@ -160,7 +160,7 @@ async def test_use_item_apply_buff(db_session):
     db = db_session
     user, game, patient, ghost = await _setup_game_with_ghost(db)
 
-    from app.domain.buff import get_buffs
+    from app.domain.character.buff import get_buffs
 
     item_def = await create_item_definition(
         db, game.id, "Shield Scroll",

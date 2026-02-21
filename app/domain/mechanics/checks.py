@@ -1,4 +1,4 @@
-"""Event check system — DM-set events, player checks, rerolls."""
+"""Event check handlers — player checks and rerolls against DM-set events."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import buff as buff_mod, character, timeline
+from app.domain import character
+from app.domain.character import buff as buff_mod
+from app.domain.session import timeline
+from app.domain.session.event_def import get_active_event
 from app.infra.config import settings
 from app.models.db_models import (
     EventAbilityUsage,
@@ -17,90 +20,6 @@ from app.models.db_models import (
 )
 from app.models.result import EngineResult, StateChange
 from app.modules.dice.parser import roll_expression
-
-
-# --- Event definition management (direct API, not dispatcher) ---
-
-
-async def set_event(
-    db: AsyncSession,
-    session_id: str,
-    game_id: str,
-    name: str,
-    expression: str,
-    color_restriction: str | None = None,
-    created_by: str | None = None,
-) -> EventDefinition:
-    """DM creates/replaces an event definition for the current session."""
-    # Deactivate any existing active event with the same name
-    existing = await get_active_event(db, session_id, name)
-    if existing is not None:
-        existing.is_active = False
-
-    event_def = EventDefinition(
-        session_id=session_id,
-        game_id=game_id,
-        name=name,
-        expression=expression,
-        color_restriction=color_restriction.upper() if color_restriction else None,
-        created_by=created_by,
-    )
-    db.add(event_def)
-    await db.flush()
-    return event_def
-
-
-async def get_active_event(
-    db: AsyncSession, session_id: str, event_name: str
-) -> EventDefinition | None:
-    result = await db.execute(
-        select(EventDefinition).where(
-            EventDefinition.session_id == session_id,
-            EventDefinition.name == event_name,
-            EventDefinition.is_active == True,  # noqa: E712
-        )
-    )
-    return result.scalar_one_or_none()
-
-
-async def get_active_events(
-    db: AsyncSession, session_id: str
-) -> list[EventDefinition]:
-    result = await db.execute(
-        select(EventDefinition).where(
-            EventDefinition.session_id == session_id,
-            EventDefinition.is_active == True,  # noqa: E712
-        )
-    )
-    return list(result.scalars().all())
-
-
-async def deactivate_event(
-    db: AsyncSession, session_id: str, event_name: str
-) -> EventDefinition:
-    event_def = await get_active_event(db, session_id, event_name)
-    if event_def is None:
-        raise ValueError(f"No active event '{event_name}' in session")
-    event_def.is_active = False
-    await db.flush()
-    return event_def
-
-
-async def deactivate_event_by_id(
-    db: AsyncSession, event_def_id: str
-) -> EventDefinition:
-    result = await db.execute(
-        select(EventDefinition).where(EventDefinition.id == event_def_id)
-    )
-    event_def = result.scalar_one_or_none()
-    if event_def is None:
-        raise ValueError(f"Event definition {event_def_id} not found")
-    event_def.is_active = False
-    await db.flush()
-    return event_def
-
-
-# --- Event check (dispatcher) ---
 
 
 async def handle_event_check(
@@ -383,3 +302,91 @@ def _resolve_color(
     if player_choice:
         return player_choice.upper()
     return patient.soul_color.upper()
+
+
+# --- Dispatcher integration: wrapper handlers + self-registration ---
+
+from app.domain.dispatcher import register_handler  # noqa: E402
+from app.domain.resolution import find_player_ghost, resolve_patient_for_event  # noqa: E402
+from app.models.event import EventCheckPayload, GameEvent, HardRerollPayload, RerollPayload  # noqa: E402
+
+
+def _require_session(event: GameEvent) -> str:
+    if not event.session_id:
+        raise ValueError("session_id is required for this event type")
+    return event.session_id
+
+
+async def _dispatch_event_check(db: AsyncSession, event: GameEvent) -> EngineResult:
+    sid = _require_session(event)
+    payload: EventCheckPayload = event.payload  # type: ignore[assignment]
+
+    patient = await resolve_patient_for_event(db, event)
+    if patient is None:
+        return EngineResult(
+            success=False, event_type="event_check",
+            error="No character in this session's region",
+        )
+
+    ghost = await find_player_ghost(db, patient_id=patient.id)
+    if ghost is None:
+        return EngineResult(
+            success=False, event_type="event_check",
+            error="Player has no ghost in this game",
+        )
+
+    return await handle_event_check(
+        db,
+        game_id=event.game_id,
+        session_id=sid,
+        user_id=event.user_id,
+        ghost=ghost,
+        patient=patient,
+        event_name=payload.event_name,
+        color=payload.color,
+    )
+
+
+async def _dispatch_reroll(db: AsyncSession, event: GameEvent) -> EngineResult:
+    return await _do_reroll(db, event, hard=False)
+
+
+async def _dispatch_hard_reroll(db: AsyncSession, event: GameEvent) -> EngineResult:
+    return await _do_reroll(db, event, hard=True)
+
+
+async def _do_reroll(db: AsyncSession, event: GameEvent, hard: bool) -> EngineResult:
+    sid = _require_session(event)
+    payload: RerollPayload | HardRerollPayload = event.payload  # type: ignore[assignment]
+    event_type = "hard_reroll" if hard else "reroll"
+
+    patient = await resolve_patient_for_event(db, event)
+    if patient is None:
+        return EngineResult(
+            success=False, event_type=event_type,
+            error="No character in this session's region",
+        )
+
+    ghost = await find_player_ghost(db, patient_id=patient.id)
+    if ghost is None:
+        return EngineResult(
+            success=False, event_type=event_type,
+            error="Player has no ghost in this game",
+        )
+
+    return await handle_reroll(
+        db,
+        game_id=event.game_id,
+        session_id=sid,
+        user_id=event.user_id,
+        ghost=ghost,
+        patient=patient,
+        event_name=payload.event_name,
+        ability_id=payload.ability_id,
+        hard=hard,
+    )
+
+
+register_handler("event_check", _dispatch_event_check)
+register_handler("reroll", _dispatch_reroll)
+register_handler("hard_reroll", _dispatch_hard_reroll)

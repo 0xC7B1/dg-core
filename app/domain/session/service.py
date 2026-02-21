@@ -243,14 +243,14 @@ async def _check_no_conflicting_session(
 
 async def get_session_info(db: AsyncSession, session_id: str) -> dict:
     """Get comprehensive session info including players and active events."""
-    from app.domain.rules import event_check
+    from app.domain.session.event_def import get_active_events
 
     session = await get_session(db, session_id)
     if session is None:
         raise ValueError(f"Session {session_id} not found")
 
     players = await get_session_players(db, session_id)
-    active_events = await event_check.get_active_events(db, session_id)
+    active_events = await get_active_events(db, session_id)
 
     return {
         "session_id": session.id,

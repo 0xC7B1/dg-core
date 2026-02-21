@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db_models import GamePlayer
+from app.models.db_models import GamePlayer, User
 
 
 async def require_dm(
@@ -40,3 +40,9 @@ async def require_game_player(
     if gp is None:
         raise ValueError(f"User {user_id} is not in game {game_id}")
     return gp
+
+
+def require_admin(user: User) -> None:
+    """Verify user has admin role. Raises ValueError if not."""
+    if user.role != "admin":
+        raise ValueError("Admin role required")

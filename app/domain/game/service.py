@@ -149,7 +149,7 @@ async def update_player_role(
     gp = result.scalar_one_or_none()
     if gp is None:
         raise ValueError(f"Player {user_id} not found in game {game_id}")
-    
+
     gp.role = role
     await db.flush()
     return gp
