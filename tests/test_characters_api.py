@@ -299,6 +299,101 @@ async def test_list_buffs_not_found(client: AsyncClient):
     assert resp.status_code == 404
 
 
+# --- PUT /ghosts/{ghost_id}/companion ---
+
+@pytest.mark.asyncio
+async def test_assign_companion_success(client: AsyncClient):
+    """DM can assign a ghost as companion to a patient."""
+    kp, pl, game_id, patient_id, ghost_id = await _setup_full_character(client)
+
+    resp = await client.get(
+        f"/api/games/{game_id}/characters/{patient_id}",
+        headers=pl["headers"],
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ghost"]["id"] == ghost_id
+
+
+@pytest.mark.asyncio
+async def test_assign_companion_non_dm_rejected(client: AsyncClient):
+    """Non-DM player cannot assign companions."""
+    kp, pl, game_id = await _setup_game_with_player(client)
+    patient_id = await _create_patient(client, pl["headers"], pl["user_id"], game_id)
+    ghost_id = await _create_ghost(client, kp["headers"], game_id, patient_id, kp["user_id"])
+
+    resp = await client.put(
+        f"/api/games/{game_id}/ghosts/{ghost_id}/companion",
+        json={"patient_id": patient_id},
+        headers=pl["headers"],
+    )
+    assert resp.status_code == 403
+    assert "Only DM" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_assign_companion_patient_already_has_ghost(client: AsyncClient):
+    """Assigning a second ghost to a patient that already has one returns 409."""
+    kp, pl, game_id, patient_id, ghost_id = await _setup_full_character(client)
+
+    # Create another ghost
+    second_patient_id = await _create_patient(client, pl["headers"], pl["user_id"], game_id, "另一患者")
+    second_ghost_id = await _create_ghost(client, kp["headers"], game_id, second_patient_id, kp["user_id"], "另一幽灵")
+
+    # Try to assign second ghost to the same patient (already has ghost_id)
+    resp = await client.put(
+        f"/api/games/{game_id}/ghosts/{second_ghost_id}/companion",
+        json={"patient_id": patient_id},
+        headers=kp["headers"],
+    )
+    assert resp.status_code == 409
+    assert "already has a companion" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_assign_companion_reassign_same_ghost(client: AsyncClient):
+    """Reassigning the same ghost to a different patient succeeds."""
+    kp, pl, game_id, patient_id, ghost_id = await _setup_full_character(client)
+
+    second_patient_id = await _create_patient(client, pl["headers"], pl["user_id"], game_id, "另一患者")
+
+    resp = await client.put(
+        f"/api/games/{game_id}/ghosts/{ghost_id}/companion",
+        json={"patient_id": second_patient_id},
+        headers=kp["headers"],
+    )
+    assert resp.status_code == 200
+    assert resp.json()["current_patient_id"] == second_patient_id
+
+
+@pytest.mark.asyncio
+async def test_assign_companion_ghost_not_found(client: AsyncClient):
+    """Assigning a nonexistent ghost returns 404."""
+    kp, pl, game_id = await _setup_game_with_player(client)
+    patient_id = await _create_patient(client, pl["headers"], pl["user_id"], game_id)
+
+    resp = await client.put(
+        f"/api/games/{game_id}/ghosts/nonexistent/companion",
+        json={"patient_id": patient_id},
+        headers=kp["headers"],
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_assign_companion_patient_not_found(client: AsyncClient):
+    """Assigning to a nonexistent patient returns 404."""
+    kp, pl, game_id = await _setup_game_with_player(client)
+    patient_id = await _create_patient(client, pl["headers"], pl["user_id"], game_id)
+    ghost_id = await _create_ghost(client, kp["headers"], game_id, patient_id, kp["user_id"])
+
+    resp = await client.put(
+        f"/api/games/{game_id}/ghosts/{ghost_id}/companion",
+        json={"patient_id": "nonexistent"},
+        headers=kp["headers"],
+    )
+    assert resp.status_code == 404
+
+
 # --- POST /characters/unlock-archive ---
 
 @pytest.mark.asyncio

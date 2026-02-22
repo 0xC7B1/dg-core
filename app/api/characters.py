@@ -366,10 +366,35 @@ async def assign_ghost_companion(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    try:
+        await permissions.require_dm(db, game_id, current_user.id)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Only DM can assign companions")
+
     ghost = await character.get_ghost(db, ghost_id)
     if ghost is None:
         raise HTTPException(status_code=404, detail="Ghost not found")
-    ghost.current_patient_id = req.patient_id
+    if ghost.game_id != game_id:
+        raise HTTPException(status_code=400, detail="Ghost not in this game")
+
+    patient = await character.get_patient(db, req.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if patient.game_id != game_id:
+        raise HTTPException(status_code=400, detail="Patient not in this game")
+
+    # Check no other ghost is already assigned to this patient
+    existing = await db.execute(
+        select(Ghost).where(
+            Ghost.current_patient_id == req.patient_id,
+            Ghost.id != ghost_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Patient already has a companion ghost")
+
+    # Set via relationship so SQLAlchemy updates both sides of back_populates
+    ghost.current_patient = patient
     await db.flush()
     return {"ghost_id": ghost.id, "current_patient_id": ghost.current_patient_id}
 
