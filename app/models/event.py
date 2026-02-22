@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EventType(str, Enum):
@@ -172,12 +172,26 @@ class HPChangePayload(BaseModel):
 
 class RegionTransitionPayload(BaseModel):
     event_type: Literal["region_transition"] = "region_transition"
-    target_region_id: str
+    target_region_id: str | None = None
+    target_region_name: str | None = None
+
+    @model_validator(mode="after")
+    def check_region_provided(self) -> "RegionTransitionPayload":
+        if not self.target_region_id and not self.target_region_name:
+            raise ValueError("Must provide target_region_id or target_region_name")
+        return self
 
 
 class LocationTransitionPayload(BaseModel):
     event_type: Literal["location_transition"] = "location_transition"
-    target_location_id: str
+    target_location_id: str | None = None
+    target_location_name: str | None = None
+
+    @model_validator(mode="after")
+    def check_location_provided(self) -> "LocationTransitionPayload":
+        if not self.target_location_id and not self.target_location_name:
+            raise ValueError("Must provide target_location_id or target_location_name")
+        return self
 
 
 # --- DM management payloads ---

@@ -96,6 +96,24 @@ async def get_locations(
     return list(result.scalars().all())
 
 
+async def get_region_by_name(db: AsyncSession, game_id: str, name: str) -> Region | None:
+    """Look up a region by exact name within a game."""
+    result = await db.execute(
+        select(Region).where(Region.game_id == game_id, Region.name == name)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_location_by_name(db: AsyncSession, game_id: str, name: str) -> Location | None:
+    """Look up a location by exact name within a game (searches across all regions)."""
+    result = await db.execute(
+        select(Location)
+        .join(Region, Location.region_id == Region.id)
+        .where(Region.game_id == game_id, Location.name == name)
+    )
+    return result.scalar_one_or_none()
+
+
 # --- Player movement ---
 
 async def move_character(
