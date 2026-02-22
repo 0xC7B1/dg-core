@@ -13,6 +13,16 @@ from app.domain import world as region_mod
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import Patient, User
+from app.models.responses import (
+    CreateLocationResponse,
+    CreateRegionResponse,
+    ListLocationsResponse,
+    ListRegionsResponse,
+    LocationInfo,
+    LocationPlayersResponse,
+    PatientSummary,
+    RegionInfo,
+)
 
 router = APIRouter(prefix="/api/games/{game_id}", tags=["regions"])
 
@@ -39,12 +49,12 @@ async def create_region(
     req: CreateRegionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreateRegionResponse:
     region = await region_mod.create_region(
         db, game_id=game_id, name=req.name, code=req.code,
         description=req.description, metadata=req.metadata, sort_order=req.sort_order,
     )
-    return {"region_id": region.id, "game_id": game_id, "code": region.code, "name": region.name}
+    return CreateRegionResponse(region_id=region.id, game_id=game_id, code=region.code, name=region.name)
 
 
 @router.get("/regions")
@@ -52,15 +62,15 @@ async def list_regions(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListRegionsResponse:
     regions = await region_mod.get_regions(db, game_id)
-    return {
-        "game_id": game_id,
-        "regions": [
-            {"id": r.id, "code": r.code, "name": r.name, "description": r.description}
+    return ListRegionsResponse(
+        game_id=game_id,
+        regions=[
+            RegionInfo(id=r.id, code=r.code, name=r.name, description=r.description)
             for r in regions
         ],
-    }
+    )
 
 
 @router.post("/regions/{region_id}/locations")
@@ -70,13 +80,13 @@ async def create_location(
     req: CreateLocationRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreateLocationResponse:
     location = await region_mod.create_location(
         db, region_id=region_id, name=req.name,
         description=req.description, content=req.content,
         metadata=req.metadata, sort_order=req.sort_order,
     )
-    return {"location_id": location.id, "region_id": region_id, "name": location.name}
+    return CreateLocationResponse(location_id=location.id, region_id=region_id, name=location.name)
 
 
 @router.get("/regions/{region_id}/locations")
@@ -85,15 +95,15 @@ async def list_locations(
     region_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListLocationsResponse:
     locations = await region_mod.get_locations(db, region_id)
-    return {
-        "region_id": region_id,
-        "locations": [
-            {"id": loc.id, "name": loc.name, "description": loc.description}
+    return ListLocationsResponse(
+        region_id=region_id,
+        locations=[
+            LocationInfo(id=loc.id, name=loc.name, description=loc.description)
             for loc in locations
         ],
-    }
+    )
 
 
 @router.get("/locations/{location_id}/players")
@@ -102,7 +112,7 @@ async def get_location_players(
     location_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> LocationPlayersResponse:
     patients_result = await db.execute(
         select(Patient).where(
             Patient.game_id == game_id,
@@ -110,10 +120,10 @@ async def get_location_players(
         )
     )
     patients = list(patients_result.scalars().all())
-    return {
-        "location_id": location_id,
-        "players": [
-            {"patient_id": p.id, "name": p.name, "soul_color": p.soul_color}
+    return LocationPlayersResponse(
+        location_id=location_id,
+        players=[
+            PatientSummary(patient_id=p.id, name=p.name, soul_color=p.soul_color)
             for p in patients
         ],
-    }
+    )

@@ -9,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.admin import setup_admin
 from app.api import auth
+from app.models.responses import HealthResponse
 from app.api import (
     characters,
     communications,
@@ -133,5 +134,5 @@ setup_admin(app)
 
 
 @app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "engine": "dg-core", "version": __version__}
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok", engine="dg-core", version=__version__)

@@ -117,7 +117,7 @@ async def test_get_character(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["patient"]["id"] == patient_id
     assert resp.json()["patient"]["name"] == "患者A"
-    assert "ghost" not in resp.json()  # no companion assigned
+    assert resp.json()["ghost"] is None  # no companion assigned
 
 
 @pytest.mark.asyncio
@@ -460,7 +460,7 @@ async def test_unlock_archive_with_fragment(client: AsyncClient):
     char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=kp["headers"])
     assert char_resp.status_code == 200
     # Ghost not yet assigned as companion — unlock state not visible from this endpoint
-    assert "ghost" not in char_resp.json()
+    assert char_resp.json()["ghost"] is None
 
     # End session so we're in a clean state for checking
     await client.post("/api/events", json={

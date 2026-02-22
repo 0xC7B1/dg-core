@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class DiceRollResult(BaseModel):
@@ -42,7 +44,7 @@ class StateChange(BaseModel):
 class EngineResult(BaseModel):
     success: bool
     event_type: str
-    data: dict = {}
+    data: dict[str, Any] = Field(default_factory=dict)
     narrative: str | None = None
     state_changes: list[StateChange] = []
     rolls: list[DiceRollResult] = []

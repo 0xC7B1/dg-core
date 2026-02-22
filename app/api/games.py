@@ -14,6 +14,14 @@ from app.domain.session import timeline
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import User
+from app.models.responses import (
+    AddPlayerResponse,
+    CreateGameResponse,
+    GameDetailResponse,
+    GamePlayerInfo,
+    GameTimelineResponse,
+    TimelineEventInfo,
+)
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 
@@ -47,10 +55,10 @@ async def create_game(
     req: CreateGameRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreateGameResponse:
     """Create a new game. Creator automatically becomes DM."""
     game = await game_mod.create_game(db, req.name, current_user.id, req.config)
-    return {"game_id": game.id, "name": game.name, "status": game.status}
+    return CreateGameResponse(game_id=game.id, name=game.name, status=game.status)
 
 
 @router.get("/{game_id}")
@@ -58,26 +66,26 @@ async def get_game(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> GameDetailResponse:
     """Get game details including player list."""
     game = await game_mod.get_game(db, game_id)
     if game is None:
         raise HTTPException(status_code=404, detail="Game not found")
     players = await game_mod.get_game_players(db, game_id)
-    return {
-        "game_id": game.id,
-        "name": game.name,
-        "status": game.status,
-        "config": json.loads(game.config_json) if game.config_json else None,
-        "players": [
-            {
-                "user_id": p.user_id,
-                "role": p.role,
-                "active_patient_id": p.active_patient_id,
-            }
+    return GameDetailResponse(
+        game_id=game.id,
+        name=game.name,
+        status=game.status,
+        config=json.loads(game.config_json) if game.config_json else None,
+        players=[
+            GamePlayerInfo(
+                user_id=p.user_id,
+                role=p.role,
+                active_patient_id=p.active_patient_id,
+            )
             for p in players
         ],
-    }
+    )
 
 
 @router.put("/{game_id}")
@@ -86,7 +94,7 @@ async def update_game(
     req: UpdateGameRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreateGameResponse:
     """Update game properties. DM only."""
     game = await game_mod.get_game(db, game_id)
     if game is None:
@@ -98,7 +106,7 @@ async def update_game(
     if req.config is not None:
         game.config_json = json.dumps(req.config)
     await db.flush()
-    return {"game_id": game.id, "name": game.name, "status": game.status}
+    return CreateGameResponse(game_id=game.id, name=game.name, status=game.status)
 
 
 @router.post("/{game_id}/players")
@@ -107,10 +115,10 @@ async def add_player_to_game(
     req: AddPlayerRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> AddPlayerResponse:
     """Add a player to a game. DM only."""
     link = await game_mod.join_game(db, game_id, req.user_id, req.role)
-    return {"game_id": game_id, "user_id": req.user_id, "role": link.role}
+    return AddPlayerResponse(game_id=game_id, user_id=req.user_id, role=link.role)
 
 
 @router.put("/{game_id}/players/{user_id}/role")
@@ -120,10 +128,10 @@ async def update_player_role(
     req: UpdatePlayerRoleRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> AddPlayerResponse:
     """Update a player's role. DM only."""
     link = await game_mod.update_player_role(db, game_id, user_id, req.role)
-    return {"game_id": game_id, "user_id": user_id, "role": link.role}
+    return AddPlayerResponse(game_id=game_id, user_id=user_id, role=link.role)
 
 
 @router.get("/{game_id}/timeline")
@@ -132,21 +140,21 @@ async def get_game_timeline(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = 50,
-) -> dict:
+) -> GameTimelineResponse:
     """Get game-wide timeline across all sessions."""
     events = await timeline.get_game_timeline(db, game_id, limit=limit)
-    return {
-        "game_id": game_id,
-        "events": [
-            {
-                "id": e.id,
-                "session_id": e.session_id,
-                "event_type": e.event_type,
-                "actor_id": e.actor_id,
-                "data": e.data_json,
-                "result_data": e.result_data_json,
-                "created_at": e.created_at.isoformat() if e.created_at else None,
-            }
+    return GameTimelineResponse(
+        game_id=game_id,
+        events=[
+            TimelineEventInfo(
+                id=e.id,
+                session_id=e.session_id,
+                event_type=e.event_type,
+                actor_id=e.actor_id,
+                data=e.data_json,
+                result_data=e.result_json,
+                created_at=e.created_at.isoformat() if e.created_at else None,
+            )
             for e in events
         ],
-    }
+    )

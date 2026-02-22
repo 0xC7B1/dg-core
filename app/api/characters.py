@@ -16,6 +16,27 @@ from app.api.deps import get_acting_user_id
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import GamePlayer, Ghost, User
+from app.models.responses import (
+    ActiveCharacterResponse,
+    AssignCompanionResponse,
+    BuffInfo,
+    CreateGhostResponse,
+    CreatePatientResponse,
+    DeletePatientResponse,
+    GhostDetail,
+    ListAbilitiesResponse,
+    ListBuffsResponse,
+    ListCharactersResponse,
+    OriginSnapshot,
+    PatientBrief,
+    PatientDetailResponse,
+    PatientFull,
+    PatientSummary,
+    PrintAbilityCreated,
+    PrintAbilityInfo,
+    SwitchCharacterResponse,
+    UnlockArchiveResponse,
+)
 
 router = APIRouter(prefix="/api/games/{game_id}", tags=["characters"])
 
@@ -75,7 +96,7 @@ async def create_patient(
     req: CreatePatientRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreatePatientResponse:
     patient = await character.create_patient(
         db,
         user_id=req.user_id,
@@ -90,7 +111,7 @@ async def create_patient(
         ideal_projection=req.ideal_projection,
     )
     swap = character.generate_swap_file(patient)
-    return {"patient_id": patient.id, "name": patient.name, "swap_file": swap}
+    return CreatePatientResponse(patient_id=patient.id, name=patient.name, swap_file=swap)
 
 
 @router.get("/characters")
@@ -98,15 +119,15 @@ async def list_characters(
     game_id: str,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListCharactersResponse:
     patients = await character.get_patients_in_game(db, game_id, user_id=acting_user_id)
-    return {
-        "game_id": game_id,
-        "characters": [
-            {"patient_id": p.id, "name": p.name, "soul_color": p.soul_color}
+    return ListCharactersResponse(
+        game_id=game_id,
+        characters=[
+            PatientSummary(patient_id=p.id, name=p.name, soul_color=p.soul_color)
             for p in patients
         ],
-    }
+    )
 
 
 # --- Ghost CRUD ---
@@ -117,7 +138,7 @@ async def create_ghost(
     req: CreateGhostRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> CreateGhostResponse:
     ghost = await character.create_ghost(
         db,
         origin_patient_id=req.origin_patient_id,
@@ -135,23 +156,23 @@ async def create_ghost(
             ability = await character.add_print_ability(
                 db, ghost.id, pa.name, pa.color, pa.description, pa.ability_count
             )
-            abilities.append({"id": ability.id, "name": ability.name, "color": ability.color})
+            abilities.append(PrintAbilityCreated(id=ability.id, name=ability.name, color=ability.color))
 
-    return {
-        "ghost_id": ghost.id,
-        "name": ghost.name,
-        "cmyk": json.loads(ghost.cmyk_json),
-        "hp": ghost.hp,
-        "hp_max": ghost.hp_max,
-        "print_abilities": abilities,
-        "origin_snapshot": {
-            "origin_name": ghost.origin_name,
-            "origin_soul_color": ghost.origin_soul_color,
-            "origin_identity": ghost.origin_identity,
-            "origin_ideal_projection": ghost.origin_ideal_projection,
-            "archive_unlock_state": json.loads(ghost.archive_unlock_json),
-        },
-    }
+    return CreateGhostResponse(
+        ghost_id=ghost.id,
+        name=ghost.name,
+        cmyk=json.loads(ghost.cmyk_json),
+        hp=ghost.hp,
+        hp_max=ghost.hp_max,
+        print_abilities=abilities,
+        origin_snapshot=OriginSnapshot(
+            origin_name=ghost.origin_name,
+            origin_soul_color=ghost.origin_soul_color,
+            origin_identity=ghost.origin_identity,
+            origin_ideal_projection=ghost.origin_ideal_projection,
+            archive_unlock_state=json.loads(ghost.archive_unlock_json),
+        ),
+    )
 
 
 # --- Active character ---
@@ -163,7 +184,7 @@ async def get_active_character(
     game_id: str,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ActiveCharacterResponse:
     gp_result = await db.execute(
         select(GamePlayer).where(
             GamePlayer.game_id == game_id,
@@ -185,44 +206,44 @@ async def get_active_character(
     )
     ghost = ghost_result.scalar_one_or_none()
 
-    result: dict = {
-        "patient": {
-            "id": patient.id,
-            "name": patient.name,
-            "soul_color": patient.soul_color,
-            "gender": patient.gender,
-            "age": patient.age,
-            "identity": patient.identity,
-            "region_id": patient.current_region_id,
-            "location_id": patient.current_location_id,
-        },
-    }
-
+    ghost_detail = None
     if ghost:
         abilities = await character.get_print_abilities(db, ghost.id)
         buffs = await buff_mod.get_buffs(db, ghost.id)
-        result["ghost"] = {
-            "id": ghost.id,
-            "name": ghost.name,
-            "cmyk": json.loads(ghost.cmyk_json),
-            "hp": ghost.hp,
-            "hp_max": ghost.hp_max,
-            "mp": ghost.mp,
-            "mp_max": ghost.mp_max,
-            "appearance": ghost.appearance,
-            "personality": ghost.personality,
-            "print_abilities": [
-                {"id": a.id, "name": a.name, "color": a.color, "ability_count": a.ability_count}
+        ghost_detail = GhostDetail(
+            id=ghost.id,
+            name=ghost.name,
+            cmyk=json.loads(ghost.cmyk_json),
+            hp=ghost.hp,
+            hp_max=ghost.hp_max,
+            mp=ghost.mp,
+            mp_max=ghost.mp_max,
+            appearance=ghost.appearance,
+            personality=ghost.personality,
+            print_abilities=[
+                PrintAbilityInfo(id=a.id, name=a.name, color=a.color, ability_count=a.ability_count)
                 for a in abilities
             ],
-            "buffs": [
-                {"id": b.id, "name": b.name, "expression": b.expression, "remaining_rounds": b.remaining_rounds}
+            buffs=[
+                BuffInfo(id=b.id, name=b.name, expression=b.expression, remaining_rounds=b.remaining_rounds)
                 for b in buffs
             ],
-            "origin_data": character.get_unlocked_origin_data(ghost),
-        }
+            origin_data=character.get_unlocked_origin_data(ghost),
+        )
 
-    return result
+    return ActiveCharacterResponse(
+        patient=PatientBrief(
+            id=patient.id,
+            name=patient.name,
+            soul_color=patient.soul_color,
+            gender=patient.gender,
+            age=patient.age,
+            identity=patient.identity,
+            region_id=patient.current_region_id,
+            location_id=patient.current_location_id,
+        ),
+        ghost=ghost_detail,
+    )
 
 
 @router.put("/characters/active")
@@ -231,12 +252,12 @@ async def switch_active_character(
     req: SwitchCharacterRequest,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> SwitchCharacterResponse:
     try:
         gp = await game_mod.switch_character(db, game_id, acting_user_id, req.patient_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"active_patient_id": gp.active_patient_id}
+    return SwitchCharacterResponse(active_patient_id=gp.active_patient_id)
 
 
 # --- Archive unlock ---
@@ -247,7 +268,7 @@ async def unlock_archive(
     req: UnlockArchiveRequest,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> UnlockArchiveResponse:
     gp_result = await db.execute(
         select(GamePlayer).where(
             GamePlayer.game_id == game_id,
@@ -270,7 +291,7 @@ async def unlock_archive(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return unlock_result
+    return UnlockArchiveResponse(**unlock_result)
 
 
 # --- Patient by ID (dynamic path — MUST come after all static /characters/* routes) ---
@@ -281,53 +302,54 @@ async def get_patient(
     patient_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> PatientDetailResponse:
     patient = await character.get_patient(db, patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
-
-    result: dict = {
-        "patient": {
-            "id": patient.id,
-            "name": patient.name,
-            "soul_color": patient.soul_color,
-            "gender": patient.gender,
-            "age": patient.age,
-            "identity": patient.identity,
-            "current_region_id": patient.current_region_id,
-            "current_location_id": patient.current_location_id,
-        },
-    }
 
     ghost_result = await db.execute(
         select(Ghost).where(Ghost.current_patient_id == patient.id)
     )
     ghost = ghost_result.scalar_one_or_none()
+
+    ghost_detail = None
     if ghost:
         abilities = await character.get_print_abilities(db, ghost.id)
         buffs = await buff_mod.get_buffs(db, ghost.id)
-        result["ghost"] = {
-            "id": ghost.id,
-            "name": ghost.name,
-            "cmyk": json.loads(ghost.cmyk_json),
-            "hp": ghost.hp,
-            "hp_max": ghost.hp_max,
-            "mp": ghost.mp,
-            "mp_max": ghost.mp_max,
-            "appearance": ghost.appearance,
-            "personality": ghost.personality,
-            "print_abilities": [
-                {"id": a.id, "name": a.name, "color": a.color, "ability_count": a.ability_count}
+        ghost_detail = GhostDetail(
+            id=ghost.id,
+            name=ghost.name,
+            cmyk=json.loads(ghost.cmyk_json),
+            hp=ghost.hp,
+            hp_max=ghost.hp_max,
+            mp=ghost.mp,
+            mp_max=ghost.mp_max,
+            appearance=ghost.appearance,
+            personality=ghost.personality,
+            print_abilities=[
+                PrintAbilityInfo(id=a.id, name=a.name, color=a.color, ability_count=a.ability_count)
                 for a in abilities
             ],
-            "buffs": [
-                {"id": b.id, "name": b.name, "expression": b.expression, "remaining_rounds": b.remaining_rounds}
+            buffs=[
+                BuffInfo(id=b.id, name=b.name, expression=b.expression, remaining_rounds=b.remaining_rounds)
                 for b in buffs
             ],
-            "origin_data": character.get_unlocked_origin_data(ghost),
-        }
+            origin_data=character.get_unlocked_origin_data(ghost),
+        )
 
-    return result
+    return PatientDetailResponse(
+        patient=PatientFull(
+            id=patient.id,
+            name=patient.name,
+            soul_color=patient.soul_color,
+            gender=patient.gender,
+            age=patient.age,
+            identity=patient.identity,
+            current_region_id=patient.current_region_id,
+            current_location_id=patient.current_location_id,
+        ),
+        ghost=ghost_detail,
+    )
 
 
 @router.delete("/characters/{patient_id}")
@@ -336,7 +358,7 @@ async def delete_patient_endpoint(
     patient_id: str,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> DeletePatientResponse:
     patient = await character.get_patient(db, patient_id)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -353,7 +375,7 @@ async def delete_patient_endpoint(
         await character.delete_patient(db, patient_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"deleted": patient_id}
+    return DeletePatientResponse(deleted=patient_id)
 
 
 # --- Ghost sub-resources ---
@@ -365,7 +387,7 @@ async def assign_ghost_companion(
     req: AssignCompanionRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> AssignCompanionResponse:
     try:
         await permissions.require_dm(db, game_id, current_user.id)
     except ValueError:
@@ -396,7 +418,7 @@ async def assign_ghost_companion(
     # Set via relationship so SQLAlchemy updates both sides of back_populates
     ghost.current_patient = patient
     await db.flush()
-    return {"ghost_id": ghost.id, "current_patient_id": ghost.current_patient_id}
+    return AssignCompanionResponse(ghost_id=ghost.id, current_patient_id=ghost.current_patient_id)
 
 
 @router.get("/ghosts/{ghost_id}/abilities")
@@ -405,18 +427,18 @@ async def list_abilities(
     ghost_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListAbilitiesResponse:
     ghost = await character.get_ghost(db, ghost_id)
     if ghost is None:
         raise HTTPException(status_code=404, detail="Ghost not found")
     abilities = await character.get_print_abilities(db, ghost_id)
-    return {
-        "ghost_id": ghost_id,
-        "abilities": [
-            {"id": a.id, "name": a.name, "color": a.color, "description": a.description, "ability_count": a.ability_count}
+    return ListAbilitiesResponse(
+        ghost_id=ghost_id,
+        abilities=[
+            PrintAbilityInfo(id=a.id, name=a.name, color=a.color, description=a.description, ability_count=a.ability_count)
             for a in abilities
         ],
-    }
+    )
 
 
 @router.get("/ghosts/{ghost_id}/buffs")
@@ -425,21 +447,21 @@ async def list_buffs(
     ghost_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListBuffsResponse:
     ghost = await character.get_ghost(db, ghost_id)
     if ghost is None:
         raise HTTPException(status_code=404, detail="Ghost not found")
     buffs = await buff_mod.get_buffs(db, ghost_id)
-    return {
-        "ghost_id": ghost_id,
-        "buffs": [
-            {
-                "id": b.id,
-                "name": b.name,
-                "expression": b.expression,
-                "buff_type": b.buff_type,
-                "remaining_rounds": b.remaining_rounds,
-            }
+    return ListBuffsResponse(
+        ghost_id=ghost_id,
+        buffs=[
+            BuffInfo(
+                id=b.id,
+                name=b.name,
+                expression=b.expression,
+                buff_type=b.buff_type,
+                remaining_rounds=b.remaining_rounds,
+            )
             for b in buffs
         ],
-    }
+    )

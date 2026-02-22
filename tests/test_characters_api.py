@@ -123,7 +123,7 @@ async def test_get_active_character_no_ghost(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert "patient" in data
-    assert "ghost" not in data
+    assert data["ghost"] is None
 
 
 @pytest.mark.asyncio

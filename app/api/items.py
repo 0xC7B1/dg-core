@@ -14,6 +14,13 @@ from app.domain.character import items as inventory
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import GamePlayer, User
+from app.models.responses import (
+    CreateItemDefinitionResponse,
+    InventoryItemInfo,
+    ItemDefinitionInfo,
+    ListInventoryResponse,
+    ListItemDefinitionsResponse,
+)
 
 router = APIRouter(prefix="/api/games/{game_id}/items", tags=["items"])
 
@@ -33,7 +40,7 @@ async def create_item_definition(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     user_id: str | None = None,
-) -> dict:
+) -> CreateItemDefinitionResponse:
     acting_user_id = user_id or current_user.id
     try:
         await permissions.require_dm(db, game_id, acting_user_id)
@@ -44,7 +51,7 @@ async def create_item_definition(
         description=req.description, item_type=req.item_type,
         effect=req.effect, stackable=req.stackable,
     )
-    return {"id": item_def.id, "name": item_def.name, "item_type": item_def.item_type}
+    return CreateItemDefinitionResponse(id=item_def.id, name=item_def.name, item_type=item_def.item_type)
 
 
 @router.get("/definitions")
@@ -52,15 +59,15 @@ async def list_item_definitions(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ListItemDefinitionsResponse:
     items = await inventory.get_item_definitions(db, game_id)
-    return {
-        "game_id": game_id,
-        "definitions": [
-            {"id": i.id, "name": i.name, "item_type": i.item_type, "description": i.description}
+    return ListItemDefinitionsResponse(
+        game_id=game_id,
+        definitions=[
+            ItemDefinitionInfo(id=i.id, name=i.name, item_type=i.item_type, description=i.description)
             for i in items
         ],
-    }
+    )
 
 
 @router.get("/inventory")
@@ -69,7 +76,7 @@ async def list_inventory(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     user_id: str | None = None,
-) -> dict:
+) -> ListInventoryResponse:
     acting_user_id = user_id or current_user.id
     gp_result = await db.execute(
         select(GamePlayer).where(
@@ -81,10 +88,10 @@ async def list_inventory(
     if gp is None or gp.active_patient_id is None:
         raise HTTPException(status_code=400, detail="No active character")
     items = await inventory.get_inventory(db, gp.active_patient_id)
-    return {
-        "patient_id": gp.active_patient_id,
-        "items": [
-            {"item_def_id": pi.item_def_id, "count": pi.count}
+    return ListInventoryResponse(
+        patient_id=gp.active_patient_id,
+        items=[
+            InventoryItemInfo(item_def_id=pi.item_def_id, count=pi.count)
             for pi in items
         ],
-    }
+    )

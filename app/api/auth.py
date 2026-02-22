@@ -21,6 +21,15 @@ from app.infra.auth import (
 )
 from app.infra.db import get_db
 from app.models.db_models import PlatformBinding, User
+from app.models.responses import (
+    PlatformBindingInfo,
+    PlatformBindResponse,
+    RegenerateApiKeyResponse,
+    RegisterResponse,
+    ResolvePlatformResponse,
+    TokenResponse,
+    UserProfileResponse,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -62,7 +71,7 @@ class BindPlatformRequest(BaseModel):
 async def register(
     req: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> RegisterResponse:
     """Register a new user with optional platform binding and/or password."""
     has_platform = req.platform is not None and req.platform_uid is not None
     has_password = req.password is not None
@@ -99,12 +108,12 @@ async def register(
 
     token = create_access_token(user.id)
 
-    return {
-        "user_id": user.id,
-        "api_key": raw_key,
-        "access_token": token.access_token,
-        "expires_at": token.expires_at.isoformat(),
-    }
+    return RegisterResponse(
+        user_id=user.id,
+        api_key=raw_key,
+        access_token=token.access_token,
+        expires_at=token.expires_at.isoformat(),
+    )
 
 
 @router.post("/login/platform")
@@ -112,7 +121,7 @@ async def login_by_platform(
     req: PlatformLoginRequest,
     _caller: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> TokenResponse:
     """Login via platform identity (used by bot middleware).
 
     Requires authentication (API Key or JWT) — only trusted bot services
@@ -125,11 +134,11 @@ async def login_by_platform(
         raise HTTPException(status_code=403, detail="User account is deactivated")
 
     token = create_access_token(user.id)
-    return {
-        "user_id": user.id,
-        "access_token": token.access_token,
-        "expires_at": token.expires_at.isoformat(),
-    }
+    return TokenResponse(
+        user_id=user.id,
+        access_token=token.access_token,
+        expires_at=token.expires_at.isoformat(),
+    )
 
 
 @router.post("/resolve-platform")
@@ -137,7 +146,7 @@ async def resolve_platform(
     req: PlatformLoginRequest,
     _caller: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> ResolvePlatformResponse:
     """Resolve a platform identity to a user_id without issuing a JWT.
 
     Used by bot services to map platform users (QQ/Discord) to dg-core
@@ -149,14 +158,14 @@ async def resolve_platform(
         raise HTTPException(status_code=404, detail="No user bound to this platform identity")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated")
-    return {"user_id": user.id, "username": user.username}
+    return ResolvePlatformResponse(user_id=user.id, username=user.username)
 
 
 @router.post("/login/api-key")
 async def login_by_api_key(
     req: ApiKeyLoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> TokenResponse:
     """Login via API key. Returns JWT token."""
     key_hash = hashlib.sha256(req.api_key.encode()).hexdigest()
     result = await db.execute(select(User).where(User.api_key_hash == key_hash))
@@ -167,29 +176,29 @@ async def login_by_api_key(
         raise HTTPException(status_code=403, detail="User account is deactivated")
 
     token = create_access_token(user.id)
-    return {
-        "user_id": user.id,
-        "access_token": token.access_token,
-        "expires_at": token.expires_at.isoformat(),
-    }
+    return TokenResponse(
+        user_id=user.id,
+        access_token=token.access_token,
+        expires_at=token.expires_at.isoformat(),
+    )
 
 
 @router.post("/login/password")
 async def login_by_password(
     req: PasswordLoginRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> TokenResponse:
     """Login via username + password. Returns JWT token."""
     user = await authenticate_by_password(db, req.username, req.password)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_access_token(user.id)
-    return {
-        "user_id": user.id,
-        "access_token": token.access_token,
-        "expires_at": token.expires_at.isoformat(),
-    }
+    return TokenResponse(
+        user_id=user.id,
+        access_token=token.access_token,
+        expires_at=token.expires_at.isoformat(),
+    )
 
 
 @router.post("/bind-platform")
@@ -197,7 +206,7 @@ async def bind_platform(
     req: BindPlatformRequest,
     user: Annotated[User, Depends(get_current_user_jwt)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> PlatformBindResponse:
     """Bind an additional platform identity to the authenticated user."""
     existing = await db.execute(
         select(PlatformBinding).where(
@@ -214,40 +223,40 @@ async def bind_platform(
     db.add(binding)
     await db.flush()
 
-    return {
-        "user_id": user.id,
-        "platform": req.platform,
-        "platform_uid": req.platform_uid,
-        "status": "bound",
-    }
+    return PlatformBindResponse(
+        user_id=user.id,
+        platform=req.platform,
+        platform_uid=req.platform_uid,
+        status="bound",
+    )
 
 
 @router.get("/me")
 async def get_me(
     user: Annotated[User, Depends(get_current_user_jwt)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> UserProfileResponse:
     """Return the current authenticated user's profile and bindings."""
     bindings_result = await db.execute(
         select(PlatformBinding).where(PlatformBinding.user_id == user.id)
     )
     bindings = bindings_result.scalars().all()
 
-    return {
-        "user_id": user.id,
-        "username": user.username,
-        "role": user.role,
-        "is_active": user.is_active,
-        "created_at": user.created_at.isoformat(),
-        "platform_bindings": [
-            {
-                "platform": b.platform,
-                "platform_uid": b.platform_uid,
-                "bound_at": b.bound_at.isoformat(),
-            }
+    return UserProfileResponse(
+        user_id=user.id,
+        username=user.username,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat(),
+        platform_bindings=[
+            PlatformBindingInfo(
+                platform=b.platform,
+                platform_uid=b.platform_uid,
+                bound_at=b.bound_at.isoformat(),
+            )
             for b in bindings
         ],
-    }
+    )
 
 
 class UnbindPlatformRequest(BaseModel):
@@ -260,7 +269,7 @@ async def unbind_platform(
     req: UnbindPlatformRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> PlatformBindResponse:
     """Remove a platform binding from the authenticated user."""
     result = await db.execute(
         select(PlatformBinding).where(
@@ -276,19 +285,19 @@ async def unbind_platform(
     await db.delete(binding)
     await db.flush()
 
-    return {
-        "user_id": user.id,
-        "platform": req.platform,
-        "platform_uid": req.platform_uid,
-        "status": "unbound",
-    }
+    return PlatformBindResponse(
+        user_id=user.id,
+        platform=req.platform,
+        platform_uid=req.platform_uid,
+        status="unbound",
+    )
 
 
 @router.post("/regenerate-api-key")
 async def regenerate_api_key(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> RegenerateApiKeyResponse:
     """Regenerate the API key for the authenticated user.
 
     The old key is immediately invalidated. If authenticating via API key,
@@ -297,4 +306,4 @@ async def regenerate_api_key(
     raw_key, key_hash = generate_api_key()
     user.api_key_hash = key_hash
     await db.flush()
-    return {"user_id": user.id, "api_key": raw_key}
+    return RegenerateApiKeyResponse(user_id=user.id, api_key=raw_key)
