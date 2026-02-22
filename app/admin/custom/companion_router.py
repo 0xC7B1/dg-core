@@ -17,7 +17,7 @@ class CompanionRouterView(BaseView):
     icon = "fa-solid fa-link"
 
     @expose("/companion-router", methods=["GET"])
-    async def router_page(self, request: Request):
+    async def companion_page(self, request: Request):
         game_id = request.query_params.get("game_id", "")
         ghosts = []
         patients = []
@@ -73,37 +73,65 @@ class CompanionRouterView(BaseView):
             },
         )
 
-    @expose("/companion-router/assign", methods=["POST"])
-    async def assign_companion(self, request: Request):
+    @expose("/companion-router/save", methods=["POST"])
+    async def save_assignments(self, request: Request):
         form = await request.form()
-        ghost_id = form.get("ghost_id", "")
-        patient_id = form.get("patient_id", "") or None
         game_id = form.get("game_id", "")
 
-        async with async_session_factory() as db:
-            ghost_result = await db.execute(
-                select(Ghost).where(Ghost.id == ghost_id)
+        # Collect all ghost -> patient assignments from the form
+        # Form fields are named "ghost_{ghost_id}" with patient_id as value
+        assignments: dict[str, str | None] = {}
+        for key, value in form.multi_items():
+            if key.startswith("ghost_"):
+                ghost_id = key[6:]  # strip "ghost_" prefix
+                assignments[ghost_id] = value or None
+
+        if not assignments:
+            return RedirectResponse(
+                url=f"/admin/companion-router?game_id={game_id}", status_code=303,
             )
-            ghost = ghost_result.scalar_one_or_none()
-            if ghost:
+
+        async with async_session_factory() as db:
+            # Load all affected ghosts in one query
+            ghost_result = await db.execute(
+                select(Ghost).where(Ghost.id.in_(assignments.keys()))
+            )
+            ghosts_by_id = {g.id: g for g in ghost_result.scalars().all()}
+
+            # Build a set of patient_ids being assigned (for collision check)
+            target_patients: dict[str, str] = {}  # patient_id -> ghost_id
+            for ghost_id, patient_id in assignments.items():
                 if patient_id:
-                    # Check no other ghost already assigned to this patient
-                    existing = await db.execute(
-                        select(Ghost).where(
-                            Ghost.current_patient_id == patient_id,
-                            Ghost.id != ghost_id,
-                        )
+                    if patient_id in target_patients:
+                        # Two ghosts assigned to the same patient in this batch
+                        # skip the second one
+                        continue
+                    target_patients[patient_id] = ghost_id
+
+            # Check for collisions with ghosts NOT in this batch
+            for patient_id, ghost_id in target_patients.items():
+                existing = await db.execute(
+                    select(Ghost).where(
+                        Ghost.current_patient_id == patient_id,
+                        Ghost.id.not_in(list(assignments.keys())),
                     )
-                    if existing.scalar_one_or_none() is not None:
-                        return RedirectResponse(
-                            url=f"/admin/companion-router?game_id={game_id}",
-                            status_code=303,
-                        )
+                )
+                if existing.scalar_one_or_none() is not None:
+                    # Patient already assigned to a ghost outside this batch
+                    target_patients.pop(patient_id, None)
+
+            # Apply assignments
+            for ghost_id, patient_id in assignments.items():
+                ghost = ghosts_by_id.get(ghost_id)
+                if ghost is None:
+                    continue
+                if patient_id and patient_id in target_patients:
                     ghost.current_patient_id = patient_id
                 else:
                     ghost.current_patient_id = None
-                await db.commit()
+
+            await db.commit()
 
         return RedirectResponse(
-            url=f"/admin/companion-router?game_id={game_id}", status_code=303
+            url=f"/admin/companion-router?game_id={game_id}", status_code=303,
         )

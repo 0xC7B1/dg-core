@@ -32,42 +32,44 @@
 </div>
 
 {% if game_id and ghosts %}
-<div class="col-12">
-  <div class="card">
-    <div class="card-header">
-      <h3 class="card-title">
-        <i class="fa-solid fa-ghost me-2"></i>Ghost Assignments
-      </h3>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-vcenter card-table">
-        <thead>
-          <tr>
-            <th>Ghost</th>
-            <th>Current Companion</th>
-            <th>Assign To</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ghost in ghosts %}
-          <tr>
-            <td>
-              <i class="fa-solid fa-ghost me-1 text-muted"></i>
-              {{ ghost.name }}
-            </td>
-            <td>
-              {% if ghost.current_patient_name %}
-                <span class="badge bg-green-lt">{{ ghost.current_patient_name }}</span>
-              {% else %}
-                <span class="text-muted">Unassigned</span>
-              {% endif %}
-            </td>
-            <td>
-              <form method="post" action="/admin/companion-router/assign" class="d-flex gap-2" id="form-{{ ghost.id }}">
-                <input type="hidden" name="ghost_id" value="{{ ghost.id }}">
-                <input type="hidden" name="game_id" value="{{ game_id }}">
-                <select name="patient_id" class="form-select form-select-sm" style="max-width: 250px;">
+<form method="post" action="/admin/companion-router/save" id="bulk-form">
+  <input type="hidden" name="game_id" value="{{ game_id }}">
+
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0">
+          <i class="fa-solid fa-ghost me-2"></i>Ghost Assignments
+        </h3>
+        <button type="submit" class="btn btn-primary">
+          <i class="fa-solid fa-check me-1"></i>Apply All
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+          <thead>
+            <tr>
+              <th>Ghost</th>
+              <th>Current Companion</th>
+              <th>Assign To</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ghost in ghosts %}
+            <tr>
+              <td>
+                <i class="fa-solid fa-ghost me-1 text-muted"></i>
+                {{ ghost.name }}
+              </td>
+              <td>
+                {% if ghost.current_patient_name %}
+                  <span class="badge bg-green-lt">{{ ghost.current_patient_name }}</span>
+                {% else %}
+                  <span class="text-muted">Unassigned</span>
+                {% endif %}
+              </td>
+              <td>
+                <select name="ghost_{{ ghost.id }}" class="form-select form-select-sm" style="max-width: 280px;">
                   <option value="">-- Unassign --</option>
                   {% for patient in patients %}
                   <option value="{{ patient.id }}"
@@ -80,18 +82,20 @@
                   </option>
                   {% endfor %}
                 </select>
-                <button type="submit" class="btn btn-sm btn-primary">
-                  <i class="fa-solid fa-check"></i>
-                </button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer text-end">
+        <button type="submit" class="btn btn-primary">
+          <i class="fa-solid fa-check me-1"></i>Apply All
+        </button>
+      </div>
     </div>
   </div>
-</div>
+</form>
 
 <!-- Unassigned patients summary -->
 {% set unassigned_patients = [] %}
