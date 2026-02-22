@@ -39,12 +39,17 @@ async def get_region(db: AsyncSession, region_id: str) -> Region | None:
     return result.scalar_one_or_none()
 
 
-async def get_regions(db: AsyncSession, game_id: str) -> list[Region]:
-    result = await db.execute(
+async def get_regions(
+    db: AsyncSession, game_id: str, name: str | None = None,
+) -> list[Region]:
+    stmt = (
         select(Region)
         .where(Region.game_id == game_id)
-        .order_by(Region.sort_order)
     )
+    if name is not None:
+        stmt = stmt.where(Region.name.ilike(f"%{name}%"))
+    stmt = stmt.order_by(Region.sort_order)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -77,12 +82,17 @@ async def get_location(db: AsyncSession, location_id: str) -> Location | None:
     return result.scalar_one_or_none()
 
 
-async def get_locations(db: AsyncSession, region_id: str) -> list[Location]:
-    result = await db.execute(
+async def get_locations(
+    db: AsyncSession, region_id: str, name: str | None = None,
+) -> list[Location]:
+    stmt = (
         select(Location)
         .where(Location.region_id == region_id)
-        .order_by(Location.sort_order)
     )
+    if name is not None:
+        stmt = stmt.where(Location.name.ilike(f"%{name}%"))
+    stmt = stmt.order_by(Location.sort_order)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

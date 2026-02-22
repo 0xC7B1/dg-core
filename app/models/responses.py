@@ -107,6 +107,17 @@ class CreateGameResponse(BaseModel):
     status: str
 
 
+class GameSummary(BaseModel):
+    game_id: str
+    name: str
+    status: str
+    created_at: str | None = None
+
+
+class ListGamesResponse(BaseModel):
+    games: list[GameSummary]
+
+
 class GameDetailResponse(BaseModel):
     game_id: str
     name: str
@@ -230,6 +241,21 @@ class AssignCompanionResponse(BaseModel):
     current_patient_id: str
 
 
+class GhostSummary(BaseModel):
+    ghost_id: str
+    name: str
+    current_patient_id: str | None = None
+    current_patient_name: str | None = None
+    cmyk: dict[str, int]
+    hp: int
+    hp_max: int
+
+
+class ListGhostsResponse(BaseModel):
+    game_id: str
+    ghosts: list[GhostSummary]
+
+
 class ListAbilitiesResponse(BaseModel):
     ghost_id: str
     abilities: list[PrintAbilityInfo]
@@ -271,6 +297,20 @@ class SessionInfoResponse(BaseModel):
 class SessionStatusResponse(BaseModel):
     session_id: str
     status: str
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    status: str
+    region_id: str | None = None
+    location_id: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+
+
+class ListSessionsResponse(BaseModel):
+    game_id: str
+    sessions: list[SessionSummary]
 
 
 class AddSessionPlayerResponse(BaseModel):
@@ -407,3 +447,16 @@ class HealthResponse(BaseModel):
     status: str
     engine: str
     version: str
+
+
+# ── Resolve responses ────────────────────────────────────────────
+
+
+class ResolvedEntity(BaseModel):
+    entity_type: str
+    id: str
+    name: str
+
+
+class ResolveResponse(BaseModel):
+    results: list[ResolvedEntity]

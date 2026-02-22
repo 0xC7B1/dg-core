@@ -5,6 +5,7 @@ from app.domain.character.patient import (  # noqa: F401
     create_patient,
     delete_patient,
     generate_swap_file,
+    get_all_patients_in_game,
     get_patient,
     get_patients_in_game,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "create_patient",
     "delete_patient",
     "generate_swap_file",
+    "get_all_patients_in_game",
     "get_cmyk",
     "get_color_value",
     "get_ghost",

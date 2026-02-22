@@ -90,6 +90,18 @@ async def get_patients_in_game(
     return list(result.scalars().all())
 
 
+async def get_all_patients_in_game(
+    db: AsyncSession, game_id: str, name: str | None = None,
+) -> list[Patient]:
+    """List all patients in a game (no user filter), optionally filtered by name."""
+    stmt = select(Patient).where(Patient.game_id == game_id)
+    if name is not None:
+        stmt = stmt.where(Patient.name.ilike(f"%{name}%"))
+    stmt = stmt.order_by(Patient.name)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def delete_patient(db: AsyncSession, patient_id: str) -> None:
     """Delete a patient. Validates no ghost is currently attached."""
     patient = await get_patient(db, patient_id)

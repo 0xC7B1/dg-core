@@ -50,6 +50,22 @@ async def get_game(db: AsyncSession, game_id: str) -> Game | None:
     return result.scalar_one_or_none()
 
 
+async def get_games_for_user(
+    db: AsyncSession, user_id: str, status: str | None = None,
+) -> list[Game]:
+    """List all games a user participates in."""
+    stmt = (
+        select(Game)
+        .join(GamePlayer, GamePlayer.game_id == Game.id)
+        .where(GamePlayer.user_id == user_id)
+    )
+    if status is not None:
+        stmt = stmt.where(Game.status == status)
+    stmt = stmt.order_by(Game.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_game_players(db: AsyncSession, game_id: str) -> list[GamePlayer]:
     result = await db.execute(
         select(GamePlayer)

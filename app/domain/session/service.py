@@ -104,14 +104,17 @@ async def get_active_session(
 async def get_game_sessions(
     db: AsyncSession,
     game_id: str,
+    status: str | None = None,
     limit: int = 50,
 ) -> list[Session]:
-    result = await db.execute(
+    stmt = (
         select(Session)
         .where(Session.game_id == game_id)
-        .order_by(Session.started_at.desc())
-        .limit(limit)
     )
+    if status is not None:
+        stmt = stmt.where(Session.status == status)
+    stmt = stmt.order_by(Session.started_at.desc()).limit(limit)
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

@@ -46,11 +46,12 @@ async def get_item_definition(
 
 
 async def get_item_definitions(
-    db: AsyncSession, game_id: str
+    db: AsyncSession, game_id: str, name: str | None = None,
 ) -> list[ItemDefinition]:
-    result = await db.execute(
-        select(ItemDefinition).where(ItemDefinition.game_id == game_id)
-    )
+    stmt = select(ItemDefinition).where(ItemDefinition.game_id == game_id)
+    if name is not None:
+        stmt = stmt.where(ItemDefinition.name.ilike(f"%{name}%"))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

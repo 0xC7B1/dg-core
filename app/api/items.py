@@ -59,8 +59,9 @@ async def list_item_definitions(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
 ) -> ListItemDefinitionsResponse:
-    items = await inventory.get_item_definitions(db, game_id)
+    items = await inventory.get_item_definitions(db, game_id, name=name)
     return ListItemDefinitionsResponse(
         game_id=game_id,
         definitions=[

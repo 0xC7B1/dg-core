@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain import game as game_mod
-from app.domain.session import timeline
+from app.domain import character, game as game_mod
+from app.domain.session import service as session_svc, timeline
+from app.domain.world import service as world_svc
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import User
@@ -19,7 +20,13 @@ from app.models.responses import (
     CreateGameResponse,
     GameDetailResponse,
     GamePlayerInfo,
+    GameSummary,
     GameTimelineResponse,
+    ListGamesResponse,
+    ListSessionsResponse,
+    ResolvedEntity,
+    ResolveResponse,
+    SessionSummary,
     TimelineEventInfo,
 )
 
@@ -48,7 +55,37 @@ class UpdatePlayerRoleRequest(BaseModel):
     role: str
 
 
+class ResolveQuery(BaseModel):
+    name: str
+    entity_type: str | None = None  # patient/ghost/region/location/item; None=all
+
+
+class ResolveRequest(BaseModel):
+    queries: list[ResolveQuery]
+
+
 # --- Endpoints ---
+
+@router.get("")
+async def list_games(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str | None = None,
+) -> ListGamesResponse:
+    """List games the current user participates in."""
+    games = await game_mod.get_games_for_user(db, current_user.id, status=status)
+    return ListGamesResponse(
+        games=[
+            GameSummary(
+                game_id=g.id,
+                name=g.name,
+                status=g.status,
+                created_at=g.created_at.isoformat() if g.created_at else None,
+            )
+            for g in games
+        ],
+    )
+
 
 @router.post("")
 async def create_game(
@@ -160,3 +197,101 @@ async def get_game_timeline(
             for e in events
         ],
     )
+
+
+# --- Sessions listing ---
+
+@router.get("/{game_id}/sessions")
+async def list_game_sessions(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str | None = None,
+    limit: int = 50,
+) -> ListSessionsResponse:
+    """List sessions in a game, optionally filtered by status."""
+    sessions = await session_svc.get_game_sessions(
+        db, game_id, status=status, limit=limit,
+    )
+    return ListSessionsResponse(
+        game_id=game_id,
+        sessions=[
+            SessionSummary(
+                session_id=s.id,
+                status=s.status,
+                region_id=s.region_id,
+                location_id=s.location_id,
+                started_at=s.started_at.isoformat() if s.started_at else None,
+                ended_at=s.ended_at.isoformat() if s.ended_at else None,
+            )
+            for s in sessions
+        ],
+    )
+
+
+# --- Batch name resolve ---
+
+@router.post("/{game_id}/resolve")
+async def resolve_names(
+    game_id: str,
+    req: ResolveRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ResolveResponse:
+    """Batch-resolve entity names to IDs within a game.
+
+    Searches patients, ghosts, regions, locations, and items by name substring.
+    Bot clients use this to translate user input to entity IDs.
+    """
+    all_types = {"patient", "ghost", "region", "location", "item"}
+    results: list[ResolvedEntity] = []
+
+    for q in req.queries:
+        types = {q.entity_type} if q.entity_type else all_types
+
+        if "patient" in types:
+            patients = await character.get_all_patients_in_game(
+                db, game_id, name=q.name,
+            )
+            results.extend(
+                ResolvedEntity(entity_type="patient", id=p.id, name=p.name)
+                for p in patients
+            )
+        if "ghost" in types:
+            ghosts = await character.get_ghosts_in_game(
+                db, game_id, name=q.name,
+            )
+            results.extend(
+                ResolvedEntity(entity_type="ghost", id=g.id, name=g.name)
+                for g in ghosts
+            )
+        if "region" in types:
+            regions = await world_svc.get_regions(db, game_id, name=q.name)
+            results.extend(
+                ResolvedEntity(entity_type="region", id=r.id, name=r.name)
+                for r in regions
+            )
+        if "location" in types:
+            # Search locations across all regions in the game
+            regions = await world_svc.get_regions(db, game_id)
+            for region in regions:
+                locations = await world_svc.get_locations(
+                    db, region.id, name=q.name,
+                )
+                results.extend(
+                    ResolvedEntity(
+                        entity_type="location", id=loc.id, name=loc.name,
+                    )
+                    for loc in locations
+                )
+        if "item" in types:
+            from app.domain.character import items as items_mod
+            item_defs = await items_mod.get_item_definitions(
+                db, game_id, name=q.name,
+            )
+            results.extend(
+                ResolvedEntity(entity_type="item", id=i.id, name=i.name)
+                for i in item_defs
+            )
+
+    return ResolveResponse(results=results)

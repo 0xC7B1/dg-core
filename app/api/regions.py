@@ -62,8 +62,9 @@ async def list_regions(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
 ) -> ListRegionsResponse:
-    regions = await region_mod.get_regions(db, game_id)
+    regions = await region_mod.get_regions(db, game_id, name=name)
     return ListRegionsResponse(
         game_id=game_id,
         regions=[
@@ -95,8 +96,9 @@ async def list_locations(
     region_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
 ) -> ListLocationsResponse:
-    locations = await region_mod.get_locations(db, region_id)
+    locations = await region_mod.get_locations(db, region_id, name=name)
     return ListLocationsResponse(
         region_id=region_id,
         locations=[

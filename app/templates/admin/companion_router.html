@@ -1,0 +1,132 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content_header %}
+<div class="row align-items-center">
+  <div class="col">
+    <h2 class="page-title">Companion Router</h2>
+    <div class="page-pretitle">Assign ghosts to patients within a game</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Game selector -->
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <form method="get" action="/admin/companion-router" class="row g-3 align-items-end">
+        <div class="col-auto">
+          <label class="form-label">Select Game</label>
+          <select name="game_id" class="form-select" onchange="this.form.submit()">
+            <option value="">-- Select a game --</option>
+            {% for game in games %}
+            <option value="{{ game.id }}" {% if game.id == game_id %}selected{% endif %}>
+              {{ game.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if game_id and ghosts %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">
+        <i class="fa-solid fa-ghost me-2"></i>Ghost Assignments
+      </h3>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>Ghost</th>
+            <th>Current Companion</th>
+            <th>Assign To</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ghost in ghosts %}
+          <tr>
+            <td>
+              <i class="fa-solid fa-ghost me-1 text-muted"></i>
+              {{ ghost.name }}
+            </td>
+            <td>
+              {% if ghost.current_patient_name %}
+                <span class="badge bg-green-lt">{{ ghost.current_patient_name }}</span>
+              {% else %}
+                <span class="text-muted">Unassigned</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/admin/companion-router/assign" class="d-flex gap-2" id="form-{{ ghost.id }}">
+                <input type="hidden" name="ghost_id" value="{{ ghost.id }}">
+                <input type="hidden" name="game_id" value="{{ game_id }}">
+                <select name="patient_id" class="form-select form-select-sm" style="max-width: 250px;">
+                  <option value="">-- Unassign --</option>
+                  {% for patient in patients %}
+                  <option value="{{ patient.id }}"
+                    {% if patient.id == ghost.current_patient_id %}selected{% endif %}
+                    {% if patient.id in assigned_patient_ids and patient.id != ghost.current_patient_id %}disabled{% endif %}>
+                    {{ patient.name }} ({{ patient.soul_color }})
+                    {% if patient.id in assigned_patient_ids and patient.id != ghost.current_patient_id %}
+                      [assigned]
+                    {% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">
+                  <i class="fa-solid fa-check"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Unassigned patients summary -->
+{% set unassigned_patients = [] %}
+{% for patient in patients %}
+  {% if patient.id not in assigned_patient_ids %}
+    {% if unassigned_patients.append(patient) %}{% endif %}
+  {% endif %}
+{% endfor %}
+
+{% if unassigned_patients %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">
+        <i class="fa-solid fa-user me-2"></i>Patients Without Ghost
+      </h3>
+    </div>
+    <div class="card-body">
+      <div class="d-flex flex-wrap gap-2">
+        {% for patient in unassigned_patients %}
+        <span class="badge bg-yellow-lt">{{ patient.name }} ({{ patient.soul_color }})</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% elif game_id and not ghosts %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body text-center text-muted">
+      No ghosts found in this game.
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

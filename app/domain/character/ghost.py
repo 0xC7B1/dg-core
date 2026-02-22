@@ -66,8 +66,13 @@ async def get_ghost(db: AsyncSession, ghost_id: str) -> Ghost | None:
     return result.scalar_one_or_none()
 
 
-async def get_ghosts_in_game(db: AsyncSession, game_id: str) -> list[Ghost]:
-    result = await db.execute(select(Ghost).where(Ghost.game_id == game_id))
+async def get_ghosts_in_game(
+    db: AsyncSession, game_id: str, name: str | None = None,
+) -> list[Ghost]:
+    stmt = select(Ghost).where(Ghost.game_id == game_id)
+    if name is not None:
+        stmt = stmt.where(Ghost.name.ilike(f"%{name}%"))
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

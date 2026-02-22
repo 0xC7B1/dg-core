@@ -24,9 +24,11 @@ from app.models.responses import (
     CreatePatientResponse,
     DeletePatientResponse,
     GhostDetail,
+    GhostSummary,
     ListAbilitiesResponse,
     ListBuffsResponse,
     ListCharactersResponse,
+    ListGhostsResponse,
     OriginSnapshot,
     PatientBrief,
     PatientDetailResponse,
@@ -119,8 +121,15 @@ async def list_characters(
     game_id: str,
     acting_user_id: Annotated[str, Depends(get_acting_user_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
+    all: bool = False,
 ) -> ListCharactersResponse:
-    patients = await character.get_patients_in_game(db, game_id, user_id=acting_user_id)
+    if all:
+        patients = await character.get_all_patients_in_game(db, game_id, name=name)
+    else:
+        patients = await character.get_patients_in_game(db, game_id, user_id=acting_user_id)
+        if name:
+            patients = [p for p in patients if name.lower() in p.name.lower()]
     return ListCharactersResponse(
         game_id=game_id,
         characters=[
@@ -173,6 +182,34 @@ async def create_ghost(
             archive_unlock_state=json.loads(ghost.archive_unlock_json),
         ),
     )
+
+
+@router.get("/characters/ghosts")
+async def list_ghosts(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    name: str | None = None,
+) -> ListGhostsResponse:
+    """List all ghosts in a game, optionally filtered by name."""
+    ghosts = await character.get_ghosts_in_game(db, game_id, name=name)
+    items = []
+    for g in ghosts:
+        cmyk = json.loads(g.cmyk_json) if g.cmyk_json else {"C": 0, "M": 0, "Y": 0, "K": 0}
+        patient_name = None
+        if g.current_patient_id:
+            patient = await character.get_patient(db, g.current_patient_id)
+            patient_name = patient.name if patient else None
+        items.append(GhostSummary(
+            ghost_id=g.id,
+            name=g.name,
+            current_patient_id=g.current_patient_id,
+            current_patient_name=patient_name,
+            cmyk=cmyk,
+            hp=g.hp,
+            hp_max=g.hp_max,
+        ))
+    return ListGhostsResponse(game_id=game_id, ghosts=items)
 
 
 # --- Active character ---
