@@ -18,13 +18,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 启动后：
+
 - Swagger 文档：`http://localhost:8000/docs`
 - 管理后台：`http://localhost:8000/admin/`
 - 健康检查：`http://localhost:8000/health` → `{"status": "ok", "engine": "dg-core", "version": "0.1.0"}`
 
 ## 项目结构
 
-```
+```plain
 dg-core/
 ├── app/
 │   ├── main.py              # FastAPI 入口
@@ -75,7 +76,7 @@ dg-core/
 
 ## 数据模型层级
 
-```
+```plain
 User (独立账号, 支持多平台绑定)
   ├── PlatformBinding[] (qq, discord, web...)
   ├──(N:M)── GamePlayer ──(N:M)── Game (一局游戏)
@@ -95,14 +96,14 @@ User (独立账号, 支持多平台绑定)
 支持三种认证方式，所有接口（除 `/health` 和 `/api/auth/*`）均需认证：
 
 | 认证方式 | Header | 适用场景 |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | JWT Bearer | `Authorization: Bearer <token>` | Web 客户端 |
 | API Key | `X-API-Key: <64字符hex>` | Bot 服务 |
 | JWT Query Param | `?token=<jwt>` | WebSocket 连接 |
 
 ### 认证流程
 
-```
+```plain
 首次使用:    POST /api/auth/register        → 获得 user_id + api_key + access_token
 QQ Bot登录:  POST /api/auth/login/platform   → QQ uid 解析为 JWT
 Web登录:     POST /api/auth/login/api-key    → API Key 换取 JWT
@@ -114,7 +115,7 @@ Web登录:     POST /api/auth/login/api-key    → API Key 换取 JWT
 
 QQ Bot 提交事件 → 引擎处理 → WebSocket 广播给所有在线 Web 客户端：
 
-```
+```plain
 QQ群: /attack ──► Bot ──► POST /api/bot/events ──► dispatcher
                                                         │
                               HTTP响应 ◄────────────────┤
@@ -152,7 +153,7 @@ python scripts/promote_admin.py <user_id>
 ### 功能
 
 | 页面 | URL | 说明 |
-|------|-----|------|
+| ------ | ----- | ------ |
 | 模型管理 | `/admin/` | 所有 12 个 ORM 模型的列表/详情/创建/编辑/删除 |
 | 仪表盘 | `/admin/dashboard` | 游戏状态总览（用户数、游戏数、活跃会话等） |
 | CMYK 编辑器 | `/admin/cmyk-editor` | 可视化滑块编辑 Ghost 的 CMYK 属性，实时颜色预览 |
@@ -163,7 +164,7 @@ python scripts/promote_admin.py <user_id>
 复制 `.env.example` 为 `.env`：
 
 | 变量 | 默认值 | 说明 |
-|------|--------|------|
+| ---- | ------ | ---- |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./dg_core.db` | 数据库连接串 |
 | `LLM_PROVIDER` | `mock` | `mock` / `openai` / `anthropic` |
 | `LLM_API_KEY` | _(空)_ | LLM API 密钥 |
@@ -183,7 +184,7 @@ python scripts/promote_admin.py <user_id>
 ### 认证接口 `/api/auth/*`（无需认证）
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| ---- | ---- | ---- |
 | POST | `/api/auth/register` | 注册用户（返回 user_id + api_key + JWT） |
 | POST | `/api/auth/login/platform` | 平台登录（QQ/Discord uid → JWT） |
 | POST | `/api/auth/login/api-key` | API Key 登录（→ JWT） |
@@ -193,7 +194,7 @@ python scripts/promote_admin.py <user_id>
 ### 管理接口 `/api/admin/*`（需认证）
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| ---- | ----- | ---- |
 | POST | `/api/admin/games` | 创建游戏 |
 | PUT | `/api/admin/games/{id}` | 更新游戏 |
 | POST | `/api/admin/games/{id}/players` | 添加玩家到游戏 |
@@ -209,7 +210,7 @@ python scripts/promote_admin.py <user_id>
 ### 游戏接口 `/api/bot/*`（需认证）
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| ---- | ---- | ---- |
 | POST | `/api/bot/events` | 提交游戏事件（核心接口） |
 | GET | `/api/bot/games/{id}` | 查询游戏信息 |
 | GET | `/api/bot/sessions/{id}/timeline` | 查询活动时间线 |
@@ -218,7 +219,7 @@ python scripts/promote_admin.py <user_id>
 ### WebSocket `/api/web/*`
 
 | 路径 | 说明 |
-|------|------|
+| ---- | ---- |
 | `WS /api/web/ws/{game_id}?token=<jwt>` | 实时游戏事件推送 |
 | `GET /api/web/health` | Web API 健康检查 |
 
@@ -227,7 +228,7 @@ python scripts/promote_admin.py <user_id>
 通过 `POST /api/bot/events` 提交，`payload.event_type` 决定类型：
 
 | 分类 | event_type | 说明 |
-|------|------------|------|
+| ---- | ---------- | ---- |
 | 游戏生命周期 | `game_start` / `game_end` | 游戏控制 |
 | 游戏生命周期 | `player_join` / `player_leave` | 玩家进出 |
 | 跑团活动 | `session_start` / `session_end` | 跑团活动控制 |
