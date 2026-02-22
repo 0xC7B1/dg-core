@@ -624,6 +624,125 @@ async def test_region_transition_sets_patient_position(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_region_transition_by_name(client: AsyncClient):
+    """Region transition works when providing target_region_name instead of id."""
+    kp = await register_user(client, "KP_rn", "test", "kp_rn")
+    pl = await register_user(client, "PL_rn", "test", "pl_rn")
+    h_kp = kp["headers"]
+    h_pl = pl["headers"]
+
+    g = await client.post("/api/games", json={"name": "RegNameGame"}, headers=h_kp)
+    game_id = g.json()["game_id"]
+    await client.post(f"/api/games/{game_id}/players", json={
+        "user_id": pl["user_id"], "role": "PL",
+    }, headers=h_kp)
+
+    r = await client.post(f"/api/games/{game_id}/regions", json={
+        "code": "B", "name": "灰山城外",
+    }, headers=h_kp)
+    region_id = r.json()["region_id"]
+
+    patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "名称移动患者")
+
+    resp = await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "region_transition", "target_region_name": "灰山城外"},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["data"]["region_id"] == region_id
+
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
+    assert char_resp.json()["patient"]["current_region_id"] == region_id
+
+
+@pytest.mark.asyncio
+async def test_location_transition_by_name(client: AsyncClient):
+    """Location transition works when providing target_location_name instead of id."""
+    kp = await register_user(client, "KP_ln", "test", "kp_ln")
+    pl = await register_user(client, "PL_ln", "test", "pl_ln")
+    h_kp = kp["headers"]
+    h_pl = pl["headers"]
+
+    g = await client.post("/api/games", json={"name": "LocNameGame"}, headers=h_kp)
+    game_id = g.json()["game_id"]
+    await client.post(f"/api/games/{game_id}/players", json={
+        "user_id": pl["user_id"], "role": "PL",
+    }, headers=h_kp)
+
+    r = await client.post(f"/api/games/{game_id}/regions", json={
+        "code": "C", "name": "灰山城内",
+    }, headers=h_kp)
+    region_id = r.json()["region_id"]
+
+    loc = await client.post(f"/api/games/{game_id}/regions/{region_id}/locations", json={
+        "name": "旧钟楼",
+    }, headers=h_kp)
+    location_id = loc.json()["location_id"]
+
+    patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "地点移动患者")
+
+    # First move to the region
+    await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "region_transition", "target_region_id": region_id},
+    }, headers=h_pl)
+
+    # Move to location by name
+    resp = await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "location_transition", "target_location_name": "旧钟楼"},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["data"]["location_id"] == location_id
+
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
+    assert char_resp.json()["patient"]["current_location_id"] == location_id
+
+
+@pytest.mark.asyncio
+async def test_transition_by_name_not_found(client: AsyncClient):
+    """Region/location transition by name returns error when name doesn't exist."""
+    kp = await register_user(client, "KP_nf", "test", "kp_nf")
+    pl = await register_user(client, "PL_nf", "test", "pl_nf")
+    h_kp = kp["headers"]
+    h_pl = pl["headers"]
+
+    g = await client.post("/api/games", json={"name": "NotFoundGame"}, headers=h_kp)
+    game_id = g.json()["game_id"]
+    await client.post(f"/api/games/{game_id}/players", json={
+        "user_id": pl["user_id"], "role": "PL",
+    }, headers=h_kp)
+    await _create_patient_for(client, h_pl, pl["user_id"], game_id, "迷路患者")
+
+    resp = await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "region_transition", "target_region_name": "不存在的地方"},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["success"] is False
+    assert "不存在的地方" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_transition_payload_requires_id_or_name():
+    """RegionTransitionPayload and LocationTransitionPayload raise if neither id nor name given."""
+    from pydantic import ValidationError
+    from app.models.event import RegionTransitionPayload, LocationTransitionPayload
+
+    with pytest.raises(ValidationError):
+        RegionTransitionPayload()
+
+    with pytest.raises(ValidationError):
+        LocationTransitionPayload()
+
+
+@pytest.mark.asyncio
 async def test_hybrid_resolution_by_session_region(db_session):
     """Session with region_id resolves the player's patient in that region."""
     from app.domain import character, world as region_mod, session as session_mod
