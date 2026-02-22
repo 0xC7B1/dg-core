@@ -79,6 +79,7 @@ async def test_add_and_remove_player_from_session(db_session):
 
     players = await session_mod.get_session_players(db, session.id)
     assert len(players) == 1
+    assert players[0].patient.name == "SesPatient"
 
     await session_mod.remove_player_from_session(db, session.id, patient.id)
 
@@ -136,12 +137,21 @@ async def test_get_session_info(db_session):
     db = db_session
     user, game = await _setup_game(db)
 
+    patient = Patient(
+        user_id=user.id, game_id=game.id, name="InfoPatient", soul_color="K"
+    )
+    db.add(patient)
+    await db.flush()
+
     session = await session_mod.start_session(db, game.id, user.id)
+    await session_mod.add_player_to_session(db, session.id, patient.id)
     info = await session_mod.get_session_info(db, session.id)
 
     assert info["session_id"] == session.id
     assert info["status"] == "active"
     assert isinstance(info["players"], list)
+    assert len(info["players"]) == 1
+    assert info["players"][0]["patient_name"] == "InfoPatient"
     assert isinstance(info["active_events"], list)
 
 

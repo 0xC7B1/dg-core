@@ -214,6 +214,12 @@ async def test_auto_activate_first_patient(client: AsyncClient):
     players = game_resp.json()["players"]
     pl_data = next(p for p in players if p["user_id"] == pl["user_id"])
     assert pl_data["active_patient_id"] == patient_id
+    assert pl_data["active_patient_name"] == "患者一号"
+    assert pl_data["username"] is not None
+
+    kp_data = next(p for p in players if p["user_id"] == kp["user_id"])
+    assert kp_data["username"] is not None
+    assert kp_data["active_patient_name"] is None
 
 
 @pytest.mark.asyncio
@@ -233,6 +239,7 @@ async def test_auto_activate_does_not_overwrite(client: AsyncClient):
         p for p in game_resp.json()["players"] if p["user_id"] == pl["user_id"]
     )
     assert pl_data["active_patient_id"] == first_id
+    assert pl_data["active_patient_name"] == "患者一号"
 
 
 @pytest.mark.asyncio
@@ -262,6 +269,7 @@ async def test_switch_character_success(client: AsyncClient):
         p for p in game_resp.json()["players"] if p["user_id"] == pl["user_id"]
     )
     assert pl_data["active_patient_id"] == second_id
+    assert pl_data["active_patient_name"] == "患者二号"
 
 
 @pytest.mark.asyncio

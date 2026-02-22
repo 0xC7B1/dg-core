@@ -6,6 +6,7 @@ import json
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.db_models import Game, GamePlayer, Patient
 
@@ -51,7 +52,12 @@ async def get_game(db: AsyncSession, game_id: str) -> Game | None:
 
 async def get_game_players(db: AsyncSession, game_id: str) -> list[GamePlayer]:
     result = await db.execute(
-        select(GamePlayer).where(GamePlayer.game_id == game_id)
+        select(GamePlayer)
+        .where(GamePlayer.game_id == game_id)
+        .options(
+            selectinload(GamePlayer.user),
+            selectinload(GamePlayer.active_patient),
+        )
     )
     return list(result.scalars().all())
 

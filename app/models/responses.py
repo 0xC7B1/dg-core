@@ -18,8 +18,10 @@ class PlatformBindingInfo(BaseModel):
 
 class GamePlayerInfo(BaseModel):
     user_id: str
+    username: str | None = None
     role: str
     active_patient_id: str | None
+    active_patient_name: str | None = None
 
 
 class TimelineEventInfo(BaseModel):
@@ -243,6 +245,7 @@ class ListBuffsResponse(BaseModel):
 
 class SessionPlayerInfo(BaseModel):
     patient_id: str
+    patient_name: str | None = None
     joined_at: str
 
 

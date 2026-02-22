@@ -6,6 +6,7 @@ from datetime import timezone, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.db_models import Patient, Session, SessionPlayer
 
@@ -158,7 +159,9 @@ async def get_session_players(
 ) -> list[SessionPlayer]:
     """Get all players in a session."""
     result = await db.execute(
-        select(SessionPlayer).where(SessionPlayer.session_id == session_id)
+        select(SessionPlayer)
+        .where(SessionPlayer.session_id == session_id)
+        .options(selectinload(SessionPlayer.patient))
     )
     return list(result.scalars().all())
 
@@ -261,7 +264,11 @@ async def get_session_info(db: AsyncSession, session_id: str) -> dict:
         "started_at": session.started_at.isoformat() if session.started_at else None,
         "ended_at": session.ended_at.isoformat() if session.ended_at else None,
         "players": [
-            {"patient_id": sp.patient_id, "joined_at": sp.joined_at.isoformat()}
+            {
+                "patient_id": sp.patient_id,
+                "patient_name": sp.patient.name if sp.patient else None,
+                "joined_at": sp.joined_at.isoformat(),
+            }
             for sp in players
         ],
         "active_events": [

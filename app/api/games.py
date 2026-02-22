@@ -80,8 +80,10 @@ async def get_game(
         players=[
             GamePlayerInfo(
                 user_id=p.user_id,
+                username=p.user.username if p.user else None,
                 role=p.role,
                 active_patient_id=p.active_patient_id,
+                active_patient_name=p.active_patient.name if p.active_patient else None,
             )
             for p in players
         ],
