@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain import character
 from app.domain.character import buff as buff_mod
 from app.domain.session import timeline
+from app.domain.session.timeline import create_player_snapshot
 from app.domain.session.event_def import get_active_event
 from app.infra.config import settings
 from app.models.db_models import (
@@ -88,10 +89,13 @@ async def handle_event_check(
     # Tick buffs
     expired = await buff_mod.tick_buffs(db, ghost.id)
 
+    # Snapshot after state change (buffs ticked)
+    await create_player_snapshot(db, game_id, user_id, patient=patient, ghost=ghost)
+
     # Record timeline
     await timeline.append_event(
         db, session_id=session_id, game_id=game_id,
-        event_type="event_check", actor_id=user_id,
+        event_type="event_check", user_id=user_id,
         data={
             "event_name": event_name,
             "color": check_color,
@@ -249,10 +253,13 @@ async def handle_reroll(
     # Tick buffs
     expired = await buff_mod.tick_buffs(db, ghost.id)
 
+    # Snapshot after state change (buffs ticked, ability consumed, possible MP cost)
+    await create_player_snapshot(db, game_id, user_id, patient=patient, ghost=ghost)
+
     # Record timeline
     await timeline.append_event(
         db, session_id=session_id, game_id=game_id,
-        event_type=event_type, actor_id=user_id,
+        event_type=event_type, user_id=user_id,
         data={
             "event_name": event_name,
             "ability_id": ability_id,

@@ -6,11 +6,12 @@ import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain import character, game as game_mod
-from app.domain.session import service as session_svc, timeline
+from app.domain.session import service as session_svc, export, timeline
 from app.domain.world import service as world_svc
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
@@ -27,7 +28,7 @@ from app.models.responses import (
     ResolvedEntity,
     ResolveResponse,
     SessionSummary,
-    TimelineEventInfo,
+    build_timeline_event_info,
 )
 
 router = APIRouter(prefix="/api/games", tags=["games"])
@@ -184,19 +185,19 @@ async def get_game_timeline(
     events = await timeline.get_game_timeline(db, game_id, limit=limit)
     return GameTimelineResponse(
         game_id=game_id,
-        events=[
-            TimelineEventInfo(
-                id=e.id,
-                session_id=e.session_id,
-                event_type=e.event_type,
-                actor_id=e.actor_id,
-                data=e.data_json,
-                result_data=e.result_json,
-                created_at=e.created_at.isoformat() if e.created_at else None,
-            )
-            for e in events
-        ],
+        events=[build_timeline_event_info(e) for e in events],
     )
+
+
+@router.get("/{game_id}/timeline/export")
+async def export_game_timeline(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlainTextResponse:
+    """Export game-wide timeline as formatted plain text."""
+    text = await export.export_game_timeline(db, game_id)
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
 
 
 # --- Sessions listing ---

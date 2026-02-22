@@ -10,6 +10,7 @@ from app.models.db_models import (
     ItemDefinition,
     PlayerItem,
     SessionPlayer,
+    TimelinePlayerSnapshot,
 )
 
 
@@ -185,3 +186,33 @@ class PlayerItemAdmin(ModelView, model=PlayerItem):
         "item_definition",
         "count",
     ]
+
+
+class TimelinePlayerSnapshotAdmin(ModelView, model=TimelinePlayerSnapshot):
+    name = "Player Snapshot"
+    name_plural = "Player Snapshots"
+    icon = "fa-solid fa-camera"
+
+    can_create = False
+    can_edit = False
+
+    column_list = [
+        TimelinePlayerSnapshot.id,
+        TimelinePlayerSnapshot.username,
+        TimelinePlayerSnapshot.role,
+        TimelinePlayerSnapshot.patient_name,
+        TimelinePlayerSnapshot.ghost_name,
+        TimelinePlayerSnapshot.hp,
+        TimelinePlayerSnapshot.mp,
+        TimelinePlayerSnapshot.created_at,
+    ]
+    column_searchable_list = [
+        TimelinePlayerSnapshot.user_id,
+        TimelinePlayerSnapshot.username,
+        TimelinePlayerSnapshot.patient_name,
+    ]
+    column_sortable_list = [
+        TimelinePlayerSnapshot.username,
+        TimelinePlayerSnapshot.created_at,
+    ]
+    column_default_sort = ("created_at", True)

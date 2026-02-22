@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain import character
 from app.domain.session import timeline
+from app.domain.session.timeline import create_player_snapshot
 from app.infra.config import settings
 from app.models.result import DiceRollResult, EngineResult, StateChange
 from app.modules.dice import roller
@@ -84,6 +85,8 @@ async def handle_attack(
             "collapsed": collapsed,
             "fragment_gained": {"color": color_used.upper(), "value": 1},
         }
+        # Snapshot after state change (attacker CMYK gained fragment)
+        await create_player_snapshot(db, game_id, user_id, ghost=attacker)
     else:
         damage = 0
         collapsed = False
@@ -94,7 +97,7 @@ async def handle_attack(
         session_id=session_id,
         game_id=game_id,
         event_type="attack",
-        actor_id=user_id,
+        user_id=user_id,
         data={
             "attacker_ghost_id": attacker_ghost_id,
             "target_ghost_id": target_ghost_id,
@@ -157,7 +160,7 @@ async def handle_defend(
         session_id=session_id,
         game_id=game_id,
         event_type="defend",
-        actor_id=user_id,
+        user_id=user_id,
         data={"defender_ghost_id": defender_ghost_id, "color_used": color_used},
         result_data={"total": defense_roll.total, "success": defense_roll.success},
     )

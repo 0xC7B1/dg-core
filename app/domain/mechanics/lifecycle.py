@@ -71,7 +71,7 @@ async def _handle_session_start(db: AsyncSession, event: GameEvent) -> EngineRes
     )
     await timeline.append_event(
         db, session_id=s.id, game_id=event.game_id,
-        event_type="session_start", actor_id=event.user_id,
+        event_type="session_start", user_id=event.user_id,
     )
     return EngineResult(
         success=True,
@@ -90,7 +90,7 @@ async def _handle_session_end(db: AsyncSession, event: GameEvent) -> EngineResul
     s = await session_mod.end_session(db, sid)
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="session_end", actor_id=event.user_id,
+        event_type="session_end", user_id=event.user_id,
     )
     return EngineResult(
         success=True,

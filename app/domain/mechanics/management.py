@@ -51,7 +51,7 @@ async def _handle_buff_add(db: AsyncSession, event: GameEvent) -> EngineResult:
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="buff_add", actor_id=event.user_id,
+            event_type="buff_add", user_id=event.user_id,
             data={
                 "ghost_id": payload.ghost_id,
                 "buff_id": buff.id,
@@ -82,7 +82,7 @@ async def _handle_buff_remove(db: AsyncSession, event: GameEvent) -> EngineResul
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="buff_remove", actor_id=event.user_id,
+            event_type="buff_remove", user_id=event.user_id,
             data={"buff_id": payload.buff_id},
         )
 
@@ -107,7 +107,7 @@ async def _handle_item_grant(db: AsyncSession, event: GameEvent) -> EngineResult
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="item_grant", actor_id=event.user_id,
+            event_type="item_grant", user_id=event.user_id,
             data={
                 "patient_id": payload.patient_id,
                 "item_def_id": payload.item_def_id,
@@ -143,7 +143,7 @@ async def _handle_event_define(db: AsyncSession, event: GameEvent) -> EngineResu
 
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="event_define", actor_id=event.user_id,
+        event_type="event_define", user_id=event.user_id,
         data={
             "event_def_id": ed.id,
             "name": payload.name,
@@ -173,7 +173,7 @@ async def _handle_event_deactivate(db: AsyncSession, event: GameEvent) -> Engine
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="event_deactivate", actor_id=event.user_id,
+            event_type="event_deactivate", user_id=event.user_id,
             data={"event_def_id": payload.event_def_id},
         )
 
@@ -199,7 +199,7 @@ async def _handle_attribute_set(db: AsyncSession, event: GameEvent) -> EngineRes
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="attribute_set", actor_id=event.user_id,
+            event_type="attribute_set", user_id=event.user_id,
             data={
                 "ghost_id": payload.ghost_id,
                 "attribute": payload.attribute,
@@ -240,7 +240,7 @@ async def _handle_ability_add(db: AsyncSession, event: GameEvent) -> EngineResul
     if event.session_id:
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="ability_add", actor_id=event.user_id,
+            event_type="ability_add", user_id=event.user_id,
             data={
                 "ghost_id": payload.ghost_id,
                 "ability_id": ability.id,

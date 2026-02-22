@@ -246,6 +246,7 @@ def _patient_ghost_summary(patient: Patient | None, ghost: Ghost | None) -> dict
 from app.domain.dispatcher import register_handler  # noqa: E402
 from app.domain.resolution import resolve_patient_for_event  # noqa: E402
 from app.domain.session import timeline  # noqa: E402
+from app.domain.session.timeline import create_player_snapshot  # noqa: E402
 from app.models.event import (  # noqa: E402
     CommAcceptPayload,
     CommCancelPayload,
@@ -280,9 +281,12 @@ async def _dispatch_comm_request(db: AsyncSession, event: GameEvent) -> EngineRe
         target_patient_id=payload.target_patient_id,
     )
 
+    # Snapshot after state change (MP -1)
+    await create_player_snapshot(db, event.game_id, event.user_id, patient=patient)
+
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="comm_request", actor_id=event.user_id,
+        event_type="comm_request", user_id=event.user_id,
         data={
             "request_id": comm.id,
             "target_patient_id": payload.target_patient_id,
@@ -309,9 +313,12 @@ async def _dispatch_comm_accept(db: AsyncSession, event: GameEvent) -> EngineRes
         db, request_id=payload.request_id, ability_id=payload.ability_id
     )
 
+    # Snapshot after state change (ability transferred)
+    await create_player_snapshot(db, event.game_id, event.user_id)
+
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="comm_accept", actor_id=event.user_id,
+        event_type="comm_accept", user_id=event.user_id,
         data={"request_id": payload.request_id},
     )
 
@@ -330,7 +337,7 @@ async def _dispatch_comm_reject(db: AsyncSession, event: GameEvent) -> EngineRes
 
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="comm_reject", actor_id=event.user_id,
+        event_type="comm_reject", user_id=event.user_id,
         data={"request_id": payload.request_id},
     )
 
@@ -349,7 +356,7 @@ async def _dispatch_comm_cancel(db: AsyncSession, event: GameEvent) -> EngineRes
 
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
-        event_type="comm_cancel", actor_id=event.user_id,
+        event_type="comm_cancel", user_id=event.user_id,
         data={"request_id": payload.request_id},
     )
 

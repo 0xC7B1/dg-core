@@ -22,6 +22,7 @@ from app.admin.views.features import (
     ItemDefinitionAdmin,
     PlayerItemAdmin,
     SessionPlayerAdmin,
+    TimelinePlayerSnapshotAdmin,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "ItemDefinitionAdmin",
     "PlayerItemAdmin",
     "SessionPlayerAdmin",
+    "TimelinePlayerSnapshotAdmin",
 ]

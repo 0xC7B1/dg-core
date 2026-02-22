@@ -27,6 +27,7 @@ from app.admin.views import (
     SessionAdmin,
     SessionPlayerAdmin,
     TimelineEventAdmin,
+    TimelinePlayerSnapshotAdmin,
     UserAdmin,
 )
 from app.infra.config import settings
@@ -60,6 +61,7 @@ def setup_admin(app: FastAPI) -> Admin:
     admin.add_view(PrintAbilityAdmin)
     admin.add_view(SessionAdmin)
     admin.add_view(TimelineEventAdmin)
+    admin.add_view(TimelinePlayerSnapshotAdmin)
     admin.add_view(ColorFragmentAdmin)
 
     # New feature model views

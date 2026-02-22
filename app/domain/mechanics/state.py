@@ -9,6 +9,7 @@ from app.domain.character import items as inventory
 from app.domain.dispatcher import register_handler
 from app.domain.resolution import find_player_ghost, resolve_patient_for_event
 from app.domain.session import timeline
+from app.domain.session.timeline import create_player_snapshot
 from app.models.event import (
     ApplyFragmentPayload,
     GameEvent,
@@ -37,10 +38,12 @@ async def _handle_apply_fragment(db: AsyncSession, event: GameEvent) -> EngineRe
         )
     fragment_result = await character.apply_color_fragment(db, ghost, payload.color, payload.value)
     new_cmyk = fragment_result["cmyk"]
+    # Snapshot after state change (ghost CMYK changed)
+    await create_player_snapshot(db, event.game_id, event.user_id, ghost=ghost)
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
         event_type="apply_fragment",
-        actor_id=event.user_id,
+        user_id=event.user_id,
         data={"ghost_id": payload.ghost_id, "color": payload.color, "value": payload.value},
     )
     return EngineResult(
@@ -71,7 +74,7 @@ async def _handle_hp_change(db: AsyncSession, event: GameEvent) -> EngineResult:
     await timeline.append_event(
         db, session_id=sid, game_id=event.game_id,
         event_type="hp_change",
-        actor_id=event.user_id,
+        user_id=event.user_id,
         data={"ghost_id": payload.ghost_id, "delta": payload.delta, "reason": payload.reason},
         result_data={"new_hp": new_hp, "collapsed": collapsed},
     )
@@ -102,9 +105,11 @@ async def _handle_region_transition(db: AsyncSession, event: GameEvent) -> Engin
         db, event.game_id, event.user_id, region_id=payload.target_region_id
     )
     if event.session_id:
+        # Snapshot after state change (patient position changed)
+        await create_player_snapshot(db, event.game_id, event.user_id, patient=patient)
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="region_transition", actor_id=event.user_id,
+            event_type="region_transition", user_id=event.user_id,
             data={"target_region_id": payload.target_region_id},
         )
     return EngineResult(
@@ -128,9 +133,11 @@ async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> Eng
         db, event.game_id, event.user_id, location_id=payload.target_location_id
     )
     if event.session_id:
+        # Snapshot after state change (patient position changed)
+        await create_player_snapshot(db, event.game_id, event.user_id, patient=patient)
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
-            event_type="location_transition", actor_id=event.user_id,
+            event_type="location_transition", user_id=event.user_id,
             data={"target_location_id": payload.target_location_id},
         )
     return EngineResult(
@@ -177,7 +184,7 @@ async def _handle_item_use(db: AsyncSession, event: GameEvent) -> EngineResult:
     if result.success:
         await timeline.append_event(
             db, session_id=sid, game_id=event.game_id,
-            event_type="item_use", actor_id=event.user_id,
+            event_type="item_use", user_id=event.user_id,
             data={"item_def_id": payload.item_def_id},
             result_data=result.data,
         )

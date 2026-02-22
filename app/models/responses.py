@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pydantic import BaseModel
@@ -24,14 +25,37 @@ class GamePlayerInfo(BaseModel):
     active_patient_name: str | None = None
 
 
+class PlayerSnapshotInfo(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    display_name: str
+    patient_id: str | None = None
+    patient_name: str | None = None
+    soul_color: str | None = None
+    ghost_id: str | None = None
+    ghost_name: str | None = None
+    hp: int | None = None
+    hp_max: int | None = None
+    mp: int | None = None
+    mp_max: int | None = None
+    cmyk: dict[str, int] | None = None
+    region_id: str | None = None
+    location_id: str | None = None
+    buffs: list[dict[str, Any]] | None = None
+
+
 class TimelineEventInfo(BaseModel):
     id: str
     session_id: str | None = None
+    seq: int | None = None
     event_type: str
-    actor_id: str | None
-    data: str | None
-    result_data: str | None
-    created_at: str | None
+    actor_id: str | None = None  # deprecated, kept for backward compat
+    player_snapshot: PlayerSnapshotInfo | None = None
+    narrative: str | None = None
+    data: str | None = None
+    result_data: str | None = None
+    created_at: str | None = None
 
 
 class PatientSummary(BaseModel):
@@ -462,3 +486,61 @@ class ResolvedEntity(BaseModel):
 
 class ResolveResponse(BaseModel):
     results: list[ResolvedEntity]
+
+
+# ── Helper functions ─────────────────────────────────────────────
+
+
+def _snapshot_display_name(
+    username: str, role: str,
+    patient_name: str | None, ghost_name: str | None,
+) -> str:
+    if role == "DM":
+        return username
+    parts = []
+    if patient_name:
+        parts.append(f"[患者]{patient_name}")
+    if ghost_name:
+        parts.append(f"[幽灵]{ghost_name}")
+    return "/".join(parts) if parts else username
+
+
+def build_timeline_event_info(event: Any) -> TimelineEventInfo:
+    """Convert a TimelineEvent ORM (with eager-loaded player_snapshot) to response model."""
+    snapshot_info = None
+    snap = getattr(event, "player_snapshot", None)
+    if snap is not None:
+        snapshot_info = PlayerSnapshotInfo(
+            user_id=snap.user_id,
+            username=snap.username,
+            role=snap.role,
+            display_name=_snapshot_display_name(
+                snap.username, snap.role, snap.patient_name, snap.ghost_name,
+            ),
+            patient_id=snap.patient_id,
+            patient_name=snap.patient_name,
+            soul_color=snap.soul_color,
+            ghost_id=snap.ghost_id,
+            ghost_name=snap.ghost_name,
+            hp=snap.hp,
+            hp_max=snap.hp_max,
+            mp=snap.mp,
+            mp_max=snap.mp_max,
+            cmyk=json.loads(snap.cmyk_json) if snap.cmyk_json else None,
+            region_id=snap.region_id,
+            location_id=snap.location_id,
+            buffs=json.loads(snap.buffs_json) if snap.buffs_json else None,
+        )
+
+    return TimelineEventInfo(
+        id=event.id,
+        session_id=event.session_id,
+        seq=getattr(event, "seq", None),
+        event_type=event.event_type,
+        actor_id=event.actor_id,
+        player_snapshot=snapshot_info,
+        narrative=getattr(event, "narrative", None),
+        data=event.data_json,
+        result_data=event.result_json,
+        created_at=event.created_at.isoformat() if event.created_at else None,
+    )

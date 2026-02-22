@@ -153,11 +153,19 @@ class GamePlayer(Base):
     active_patient_id: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("patients.id", ondelete="SET NULL"), nullable=True
     )
+    current_snapshot_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("timeline_player_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     game: Mapped[Game] = relationship(back_populates="user_links")
     user: Mapped[User] = relationship(back_populates="game_links")
     active_patient: Mapped[Patient | None] = relationship(foreign_keys=[active_patient_id])
+    current_snapshot: Mapped[TimelinePlayerSnapshot | None] = relationship(
+        foreign_keys=[current_snapshot_id]
+    )
 
     def __str__(self) -> str:
         return f"{self.role} ({self.user_id[:8]} in {self.game_id[:8]})"
@@ -423,6 +431,61 @@ class Session(Base):
     )
 
 
+class TimelinePlayerSnapshot(Base):
+    """Deduplicated snapshot of a player's state at time of a timeline event."""
+
+    __tablename__ = "timeline_player_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    game_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("games.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # User state
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(4), nullable=False)  # "DM" / "PL"
+
+    # Patient state (nullable — player may not have active character)
+    patient_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    patient_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    soul_color: Mapped[str | None] = mapped_column(String(1), nullable=True)
+
+    # Ghost state (nullable)
+    ghost_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ghost_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hp_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mp_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cmyk_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Position
+    region_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    # Buffs (JSON array sorted by name)
+    buffs_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    game: Mapped[Game] = relationship()
+    user: Mapped[User] = relationship()
+    timeline_events: Mapped[list[TimelineEvent]] = relationship(
+        back_populates="player_snapshot"
+    )
+
+    def __str__(self) -> str:
+        name = self.patient_name or self.username
+        return f"Snapshot({name})"
+
+    __table_args__ = (
+        Index("ix_snapshot_game_user", "game_id", "user_id"),
+    )
+
+
 class TimelineEvent(Base):
     __tablename__ = "timeline_events"
 
@@ -435,7 +498,12 @@ class TimelineEvent(Base):
     )
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # deprecated
+    player_snapshot_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("timeline_player_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     data_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -443,6 +511,9 @@ class TimelineEvent(Base):
 
     session: Mapped[Session] = relationship(back_populates="timeline_events")
     game: Mapped[Game] = relationship()
+    player_snapshot: Mapped[TimelinePlayerSnapshot | None] = relationship(
+        back_populates="timeline_events"
+    )
 
     def __str__(self) -> str:
         return f"#{self.seq} {self.event_type}"
@@ -450,6 +521,7 @@ class TimelineEvent(Base):
     __table_args__ = (
         Index("ix_timeline_session_seq", "session_id", "seq"),
         Index("ix_timeline_game", "game_id"),
+        Index("ix_timeline_snapshot", "player_snapshot_id"),
     )
 
 

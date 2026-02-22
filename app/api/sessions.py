@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain import permissions, session as session_mod
-from app.domain.session import event_def, timeline
+from app.domain.session import event_def, export, timeline
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
 from app.models.db_models import User
@@ -21,7 +22,7 @@ from app.models.responses import (
     SessionInfoResponse,
     SessionStatusResponse,
     SessionTimelineResponse,
-    TimelineEventInfo,
+    build_timeline_event_info,
 )
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -166,15 +167,16 @@ async def get_session_timeline(
     events = await timeline.get_timeline(db, session_id, limit=limit)
     return SessionTimelineResponse(
         session_id=session_id,
-        events=[
-            TimelineEventInfo(
-                id=e.id,
-                event_type=e.event_type,
-                actor_id=e.actor_id,
-                data=e.data_json,
-                result_data=e.result_json,
-                created_at=e.created_at.isoformat() if e.created_at else None,
-            )
-            for e in events
-        ],
+        events=[build_timeline_event_info(e) for e in events],
     )
+
+
+@router.get("/{session_id}/timeline/export")
+async def export_session_timeline(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlainTextResponse:
+    """Export session timeline as formatted plain text."""
+    text = await export.export_session_timeline(db, session_id)
+    return PlainTextResponse(content=text, media_type="text/plain; charset=utf-8")
