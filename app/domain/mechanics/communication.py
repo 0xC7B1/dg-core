@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.domain import character
 from app.models.db_models import CommunicationRequest, Ghost, Patient
@@ -185,10 +186,15 @@ async def get_pending_requests(
 ) -> list[CommunicationRequest]:
     """Get pending requests targeting a specific patient."""
     result = await db.execute(
-        select(CommunicationRequest).where(
+        select(CommunicationRequest)
+        .where(
             CommunicationRequest.game_id == game_id,
             CommunicationRequest.target_patient_id == patient_id,
             CommunicationRequest.status == "pending",
+        )
+        .options(
+            selectinload(CommunicationRequest.initiator_patient),
+            selectinload(CommunicationRequest.target_patient),
         )
     )
     return list(result.scalars().all())

@@ -421,7 +421,9 @@ class ListInventoryResponse(BaseModel):
 class PendingCommInfo(BaseModel):
     id: str
     initiator_patient_id: str
+    initiator_patient_name: str
     target_patient_id: str
+    target_patient_name: str
     status: str
 
 

@@ -74,6 +74,8 @@ async def test_request_communication_success(db_session):
     assert comm.status == "pending"
     assert comm.initiator_patient_id == p1.id
     assert comm.target_patient_id == p2.id
+    assert comm.initiator_patient.name == "P1"
+    assert comm.target_patient.name == "P2"
     # MP should be deducted
     assert g1.mp == 4
 

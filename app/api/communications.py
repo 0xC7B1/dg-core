@@ -40,7 +40,9 @@ async def list_pending_communications(
             PendingCommInfo(
                 id=r.id,
                 initiator_patient_id=r.initiator_patient_id,
+                initiator_patient_name=r.initiator_patient.name,
                 target_patient_id=r.target_patient_id,
+                target_patient_name=r.target_patient.name,
                 status=r.status,
             )
             for r in pending
