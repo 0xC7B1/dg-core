@@ -311,7 +311,9 @@ class SessionInfoResponse(BaseModel):
     game_id: str
     status: str
     region_id: str | None
+    region_name: str | None = None
     location_id: str | None
+    location_name: str | None = None
     started_at: str | None
     ended_at: str | None
     players: list[SessionPlayerInfo]
@@ -327,7 +329,9 @@ class SessionSummary(BaseModel):
     session_id: str
     status: str
     region_id: str | None = None
+    region_name: str | None = None
     location_id: str | None = None
+    location_name: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
 
