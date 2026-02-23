@@ -214,18 +214,6 @@ async def list_game_sessions(
     sessions = await session_svc.get_game_sessions(
         db, game_id, status=status, limit=limit,
     )
-
-    # Batch-fetch unique region/location names to avoid N+1
-    region_names: dict[str, str] = {}
-    location_names: dict[str, str] = {}
-    for s in sessions:
-        if s.region_id and s.region_id not in region_names:
-            r = await world_svc.get_region(db, s.region_id)
-            region_names[s.region_id] = r.name if r else s.region_id
-        if s.location_id and s.location_id not in location_names:
-            loc = await world_svc.get_location(db, s.location_id)
-            location_names[s.location_id] = loc.name if loc else s.location_id
-
     return ListSessionsResponse(
         game_id=game_id,
         sessions=[
@@ -233,9 +221,9 @@ async def list_game_sessions(
                 session_id=s.id,
                 status=s.status,
                 region_id=s.region_id,
-                region_name=region_names.get(s.region_id) if s.region_id else None,
+                region_name=s.region.name if s.region else None,
                 location_id=s.location_id,
-                location_name=location_names.get(s.location_id) if s.location_id else None,
+                location_name=s.location.name if s.location else None,
                 started_at=s.started_at.isoformat() if s.started_at else None,
                 ended_at=s.ended_at.isoformat() if s.ended_at else None,
             )

@@ -110,6 +110,7 @@ async def get_game_sessions(
     stmt = (
         select(Session)
         .where(Session.game_id == game_id)
+        .options(selectinload(Session.region), selectinload(Session.location))
     )
     if status is not None:
         stmt = stmt.where(Session.status == status)
@@ -250,26 +251,27 @@ async def _check_no_conflicting_session(
 async def get_session_info(db: AsyncSession, session_id: str) -> dict:
     """Get comprehensive session info including players and active events."""
     from app.domain.session.event_def import get_active_events
-    from app.domain.world import get_location, get_region
 
-    session = await get_session(db, session_id)
+    result = await db.execute(
+        select(Session)
+        .where(Session.id == session_id)
+        .options(selectinload(Session.region), selectinload(Session.location))
+    )
+    session = result.scalar_one_or_none()
     if session is None:
         raise ValueError(f"Session {session_id} not found")
 
     players = await get_session_players(db, session_id)
     active_events = await get_active_events(db, session_id)
 
-    region = await get_region(db, session.region_id) if session.region_id else None
-    location = await get_location(db, session.location_id) if session.location_id else None
-
     return {
         "session_id": session.id,
         "game_id": session.game_id,
         "status": session.status,
         "region_id": session.region_id,
-        "region_name": region.name if region else None,
+        "region_name": session.region.name if session.region else None,
         "location_id": session.location_id,
-        "location_name": location.name if location else None,
+        "location_name": session.location.name if session.location else None,
         "started_at": session.started_at.isoformat() if session.started_at else None,
         "ended_at": session.ended_at.isoformat() if session.ended_at else None,
         "players": [
