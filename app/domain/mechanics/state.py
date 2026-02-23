@@ -140,6 +140,7 @@ async def _handle_region_transition(db: AsyncSession, event: GameEvent) -> Engin
 async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> EngineResult:
     payload: LocationTransitionPayload = event.payload  # type: ignore[assignment]
     location_id = payload.target_location_id
+    location = None
     if location_id is None:
         location = await region_mod.get_location_by_name(db, event.game_id, payload.target_location_name)  # type: ignore[arg-type]
         if location is None:
@@ -149,8 +150,18 @@ async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> Eng
                 error=f"Location '{payload.target_location_name}' not found in this game",
             )
         location_id = location.id
+    else:
+        location = await region_mod.get_location(db, location_id)
+        if location is None:
+            return EngineResult(
+                success=False,
+                event_type="location_transition",
+                error=f"Location '{location_id}' not found",
+            )
+    # Auto-move to the location's parent region
+    region_id = location.region_id
     patient = await region_mod.move_character(
-        db, event.game_id, event.user_id, location_id=location_id
+        db, event.game_id, event.user_id, region_id=region_id, location_id=location_id
     )
     if event.session_id:
         # Snapshot after state change (patient position changed)
@@ -158,19 +169,25 @@ async def _handle_location_transition(db: AsyncSession, event: GameEvent) -> Eng
         await timeline.append_event(
             db, session_id=event.session_id, game_id=event.game_id,
             event_type="location_transition", user_id=event.user_id,
-            data={"target_location_id": location_id},
+            data={"target_location_id": location_id, "target_region_id": region_id},
         )
     return EngineResult(
         success=True,
         event_type="location_transition",
-        data={"user_id": event.user_id, "location_id": location_id},
+        data={"user_id": event.user_id, "location_id": location_id, "region_id": region_id},
         state_changes=[
+            StateChange(
+                entity_type="patient",
+                entity_id=patient.id,
+                field="current_region_id",
+                new_value=region_id,
+            ),
             StateChange(
                 entity_type="patient",
                 entity_id=patient.id,
                 field="current_location_id",
                 new_value=location_id,
-            )
+            ),
         ],
     )
 

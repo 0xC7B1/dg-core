@@ -683,14 +683,7 @@ async def test_location_transition_by_name(client: AsyncClient):
 
     patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "地点移动患者")
 
-    # First move to the region
-    await client.post("/api/events", json={
-        "game_id": game_id,
-        "user_id": pl["user_id"],
-        "payload": {"event_type": "region_transition", "target_region_id": region_id},
-    }, headers=h_pl)
-
-    # Move to location by name
+    # Move to location by name — should auto-set region to location's parent region
     resp = await client.post("/api/events", json={
         "game_id": game_id,
         "user_id": pl["user_id"],
@@ -699,9 +692,76 @@ async def test_location_transition_by_name(client: AsyncClient):
     assert resp.status_code == 200
     assert resp.json()["success"] is True
     assert resp.json()["data"]["location_id"] == location_id
+    assert resp.json()["data"]["region_id"] == region_id
 
     char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
     assert char_resp.json()["patient"]["current_location_id"] == location_id
+    assert char_resp.json()["patient"]["current_region_id"] == region_id
+
+
+@pytest.mark.asyncio
+async def test_location_transition_auto_region_cross_region(client: AsyncClient):
+    """Location transition to a location in a different region auto-updates region."""
+    kp = await register_user(client, "KP_xr", "test", "kp_xr")
+    pl = await register_user(client, "PL_xr", "test", "pl_xr")
+    h_kp = kp["headers"]
+    h_pl = pl["headers"]
+
+    g = await client.post("/api/games", json={"name": "CrossRegionGame"}, headers=h_kp)
+    game_id = g.json()["game_id"]
+    await client.post(f"/api/games/{game_id}/players", json={
+        "user_id": pl["user_id"], "role": "PL",
+    }, headers=h_kp)
+
+    # Create two regions
+    r1 = await client.post(f"/api/games/{game_id}/regions", json={
+        "code": "A", "name": "区域A",
+    }, headers=h_kp)
+    region_a_id = r1.json()["region_id"]
+
+    r2 = await client.post(f"/api/games/{game_id}/regions", json={
+        "code": "B", "name": "区域B",
+    }, headers=h_kp)
+    region_b_id = r2.json()["region_id"]
+
+    # Create locations in each region
+    loc_a = await client.post(f"/api/games/{game_id}/regions/{region_a_id}/locations", json={
+        "name": "地点A1",
+    }, headers=h_kp)
+    location_a_id = loc_a.json()["location_id"]
+
+    loc_b = await client.post(f"/api/games/{game_id}/regions/{region_b_id}/locations", json={
+        "name": "地点B1",
+    }, headers=h_kp)
+    location_b_id = loc_b.json()["location_id"]
+
+    patient_id = await _create_patient_for(client, h_pl, pl["user_id"], game_id, "跨区域患者")
+
+    # Move to location in region A — auto-sets region to A
+    resp = await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "location_transition", "target_location_id": location_a_id},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["region_id"] == region_a_id
+
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
+    assert char_resp.json()["patient"]["current_region_id"] == region_a_id
+    assert char_resp.json()["patient"]["current_location_id"] == location_a_id
+
+    # Move to location in region B — auto-sets region to B
+    resp = await client.post("/api/events", json={
+        "game_id": game_id,
+        "user_id": pl["user_id"],
+        "payload": {"event_type": "location_transition", "target_location_id": location_b_id},
+    }, headers=h_pl)
+    assert resp.status_code == 200
+    assert resp.json()["data"]["region_id"] == region_b_id
+
+    char_resp = await client.get(f"/api/games/{game_id}/characters/{patient_id}", headers=h_pl)
+    assert char_resp.json()["patient"]["current_region_id"] == region_b_id
+    assert char_resp.json()["patient"]["current_location_id"] == location_b_id
 
 
 @pytest.mark.asyncio
