@@ -19,7 +19,7 @@ from app.models.event import (
     GameEvent,
     ItemGrantPayload,
 )
-from app.models.result import EngineResult
+from app.models.result import EngineResult, StateChange
 
 
 def _require_session(event: GameEvent) -> str:
@@ -70,12 +70,26 @@ async def _handle_buff_add(db: AsyncSession, event: GameEvent) -> EngineResult:
             "buff_type": buff.buff_type,
             "remaining_rounds": buff.remaining_rounds,
         },
+        state_changes=[
+            StateChange(
+                entity_type="ghost",
+                entity_id=payload.ghost_id,
+                field="buffs",
+                new_value=buff.id,
+            ),
+        ],
     )
 
 
 async def _handle_buff_remove(db: AsyncSession, event: GameEvent) -> EngineResult:
     await require_dm(db, event.game_id, event.user_id)
     payload: BuffRemovePayload = event.payload  # type: ignore[assignment]
+
+    # Look up ghost_id before removing
+    from sqlalchemy import select
+    from app.models.db_models import Buff
+    buff_row = (await db.execute(select(Buff).where(Buff.id == payload.buff_id))).scalar_one_or_none()
+    ghost_id = buff_row.ghost_id if buff_row else None
 
     await buff_mod.remove_buff(db, payload.buff_id)
 
@@ -86,10 +100,20 @@ async def _handle_buff_remove(db: AsyncSession, event: GameEvent) -> EngineResul
             data={"buff_id": payload.buff_id},
         )
 
+    state_changes = []
+    if ghost_id:
+        state_changes.append(StateChange(
+            entity_type="ghost",
+            entity_id=ghost_id,
+            field="buffs",
+            old_value=payload.buff_id,
+        ))
+
     return EngineResult(
         success=True,
         event_type="buff_remove",
         data={"deleted": payload.buff_id},
+        state_changes=state_changes,
     )
 
 
@@ -123,6 +147,14 @@ async def _handle_item_grant(db: AsyncSession, event: GameEvent) -> EngineResult
             "item_def_id": pi.item_def_id,
             "count": pi.count,
         },
+        state_changes=[
+            StateChange(
+                entity_type="patient",
+                entity_id=payload.patient_id,
+                field="items",
+                new_value=payload.item_def_id,
+            ),
+        ],
     )
 
 
@@ -194,6 +226,7 @@ async def _handle_attribute_set(db: AsyncSession, event: GameEvent) -> EngineRes
             success=False, event_type="attribute_set", error="Ghost not found"
         )
 
+    old_value = str(getattr(ghost, payload.attribute, None))
     await character.set_ghost_attribute(db, ghost, payload.attribute, payload.value)
 
     if event.session_id:
@@ -215,6 +248,15 @@ async def _handle_attribute_set(db: AsyncSession, event: GameEvent) -> EngineRes
             "attribute": payload.attribute,
             "value": payload.value,
         },
+        state_changes=[
+            StateChange(
+                entity_type="ghost",
+                entity_id=payload.ghost_id,
+                field=payload.attribute,
+                old_value=old_value,
+                new_value=str(payload.value),
+            ),
+        ],
     )
 
 
@@ -260,6 +302,14 @@ async def _handle_ability_add(db: AsyncSession, event: GameEvent) -> EngineResul
             "description": ability.description,
             "ability_count": ability.ability_count,
         },
+        state_changes=[
+            StateChange(
+                entity_type="ghost",
+                entity_id=payload.ghost_id,
+                field="print_abilities",
+                new_value=ability.id,
+            ),
+        ],
     )
 
 
