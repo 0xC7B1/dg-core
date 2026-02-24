@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from importlib.metadata import version, PackageNotFoundError
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from app.admin import setup_admin
@@ -54,6 +55,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:1420",      # Tauri dev server (Vite)
+        "http://tauri.localhost",      # Tauri production (custom protocol)
+        "https://tauri.localhost",     # Tauri production (HTTPS variant)
+    ],
+    allow_methods=["*"],              # 允许所有 HTTP 方法
+    allow_headers=["*"],              # 允许所有请求头（含 Authorization）
+)
 
 def custom_openapi() -> dict:  # type: ignore[no-untyped-def]
     """Add security schemes to OpenAPI schema."""
