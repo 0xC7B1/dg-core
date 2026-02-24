@@ -15,7 +15,7 @@ from app.domain.character import buff as buff_mod
 from app.api.deps import get_acting_user_id
 from app.infra.auth import get_current_user
 from app.infra.db import get_db
-from app.models.db_models import GamePlayer, Ghost, User
+from app.models.db_models import GamePlayer, Ghost, Patient as PatientModel, User
 from app.models.responses import (
     ActiveCharacterResponse,
     AssignCompanionResponse,
@@ -38,6 +38,7 @@ from app.models.responses import (
     PrintAbilityInfo,
     SwitchCharacterResponse,
     UnlockArchiveResponse,
+    UpdatePatientResponse,
 )
 
 router = APIRouter(prefix="/api/games/{game_id}", tags=["characters"])
@@ -51,7 +52,25 @@ class CreatePatientRequest(BaseModel):
     soul_color: str
     gender: str | None = None
     age: int | None = None
+    height: str | None = None
+    weight: str | None = None
     identity: str | None = None
+    appearance: str | None = None
+    statement: str | None = None
+    portrait_url: str | None = None
+    personality_archives: dict | None = None
+    ideal_projection: str | None = None
+
+
+class UpdatePatientRequest(BaseModel):
+    name: str | None = None
+    gender: str | None = None
+    age: int | None = None
+    height: str | None = None
+    weight: str | None = None
+    identity: str | None = None
+    appearance: str | None = None
+    statement: str | None = None
     portrait_url: str | None = None
     personality_archives: dict | None = None
     ideal_projection: str | None = None
@@ -107,7 +126,11 @@ async def create_patient(
         soul_color=req.soul_color,
         gender=req.gender,
         age=req.age,
+        height=req.height,
+        weight=req.weight,
         identity=req.identity,
+        appearance=req.appearance,
+        statement=req.statement,
         portrait_url=req.portrait_url,
         personality_archives=req.personality_archives,
         ideal_projection=req.ideal_projection,
@@ -275,7 +298,12 @@ async def get_active_character(
             soul_color=patient.soul_color,
             gender=patient.gender,
             age=patient.age,
+            height=patient.height,
+            weight=patient.weight,
             identity=patient.identity,
+            appearance=patient.appearance,
+            statement=patient.statement,
+            portrait_url=patient.portrait_url,
             region_id=patient.current_region_id,
             location_id=patient.current_location_id,
         ),
@@ -381,11 +409,71 @@ async def get_patient(
             soul_color=patient.soul_color,
             gender=patient.gender,
             age=patient.age,
+            height=patient.height,
+            weight=patient.weight,
             identity=patient.identity,
+            appearance=patient.appearance,
+            statement=patient.statement,
+            portrait_url=patient.portrait_url,
+            personality_archives=json.loads(patient.personality_archives_json) if patient.personality_archives_json else None,
+            ideal_projection=patient.ideal_projection,
             current_region_id=patient.current_region_id,
             current_location_id=patient.current_location_id,
         ),
         ghost=ghost_detail,
+    )
+
+
+@router.put("/characters/{patient_id}")
+async def update_patient(
+    game_id: str,
+    patient_id: str,
+    req: UpdatePatientRequest,
+    acting_user_id: Annotated[str, Depends(get_acting_user_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UpdatePatientResponse:
+    patient = await character.get_patient(db, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if patient.game_id != game_id:
+        raise HTTPException(status_code=400, detail="Patient not in this game")
+
+    is_owner = patient.user_id == acting_user_id
+    is_dm = False
+    try:
+        await permissions.require_dm(db, game_id, acting_user_id)
+        is_dm = True
+    except ValueError:
+        pass
+    if not is_owner and not is_dm:
+        raise HTTPException(status_code=403, detail="Only DM or character owner can update")
+
+    updates = req.model_dump(exclude_unset=True)
+    if "personality_archives" in updates:
+        archives = updates.pop("personality_archives")
+        patient.personality_archives_json = json.dumps(archives) if archives is not None else None
+    for field, value in updates.items():
+        setattr(patient, field, value)
+    await db.flush()
+
+    return UpdatePatientResponse(
+        patient=PatientFull(
+            id=patient.id,
+            name=patient.name,
+            soul_color=patient.soul_color,
+            gender=patient.gender,
+            age=patient.age,
+            height=patient.height,
+            weight=patient.weight,
+            identity=patient.identity,
+            appearance=patient.appearance,
+            statement=patient.statement,
+            portrait_url=patient.portrait_url,
+            personality_archives=json.loads(patient.personality_archives_json) if patient.personality_archives_json else None,
+            ideal_projection=patient.ideal_projection,
+            current_region_id=patient.current_region_id,
+            current_location_id=patient.current_location_id,
+        ),
     )
 
 

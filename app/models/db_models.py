@@ -240,7 +240,11 @@ class Patient(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     gender: Mapped[str | None] = mapped_column(String(16), nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    weight: Mapped[str | None] = mapped_column(String(32), nullable=True)
     identity: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    appearance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    statement: Mapped[str | None] = mapped_column(Text, nullable=True)
     portrait_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     soul_color: Mapped[str] = mapped_column(String(1), nullable=False)  # C/M/Y/K
     personality_archives_json: Mapped[str | None] = mapped_column(Text, nullable=True)

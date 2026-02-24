@@ -205,7 +205,12 @@ class PatientBrief(BaseModel):
     soul_color: str
     gender: str | None = None
     age: int | None = None
+    height: str | None = None
+    weight: str | None = None
     identity: str | None = None
+    appearance: str | None = None
+    statement: str | None = None
+    portrait_url: str | None = None
     region_id: str | None = None
     location_id: str | None = None
 
@@ -216,9 +221,20 @@ class PatientFull(BaseModel):
     soul_color: str
     gender: str | None = None
     age: int | None = None
+    height: str | None = None
+    weight: str | None = None
     identity: str | None = None
+    appearance: str | None = None
+    statement: str | None = None
+    portrait_url: str | None = None
+    personality_archives: dict | None = None
+    ideal_projection: str | None = None
     current_region_id: str | None = None
     current_location_id: str | None = None
+
+
+class UpdatePatientResponse(BaseModel):
+    patient: PatientFull
 
 
 class GhostDetail(BaseModel):
