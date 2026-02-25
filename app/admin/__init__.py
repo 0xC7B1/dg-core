@@ -78,10 +78,12 @@ def setup_admin(app: FastAPI) -> Admin:
     from app.admin.custom.cmyk_editor import CMYKEditorView
     from app.admin.custom.bulk_ops import BulkOpsView
     from app.admin.custom.companion_router import CompanionRouterView
+    from app.admin.custom.delete_info import DeleteInfoView
 
     admin.add_view(DashboardView)
     admin.add_view(CMYKEditorView)
     admin.add_view(BulkOpsView)
     admin.add_view(CompanionRouterView)
+    admin.add_view(DeleteInfoView)
 
     return admin

@@ -132,3 +132,15 @@ def test_admin_login_rejects_empty_password(mock_factory, test_client):
     assert resp.status_code == 400
     # Factory should not have been called since we short-circuit on empty key
     mock_factory.assert_not_called()
+
+
+# --- Delete info endpoint tests ---
+
+
+def test_admin_delete_info_redirects_without_auth(test_client):
+    """Accessing delete-info without auth should redirect to login."""
+    resp = test_client.get(
+        "/admin/delete-info?identity=ghost&pks=abc123",
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)

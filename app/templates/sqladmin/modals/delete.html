@@ -1,0 +1,174 @@
+<div class="modal modal-blur fade" id="modal-delete" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      <div class="modal-status bg-danger"></div>
+      <div class="modal-body text-center py-4">
+        <i class="text-danger fa-solid fa-triangle-exclamation fa-2x"></i>
+        <h3>Please confirm</h3>
+        <div id="modal-delete-text" class="text-muted"></div>
+        <!-- Scrollable list of item labels for bulk delete -->
+        <div id="modal-delete-items" class="text-start mt-2" style="display:none; max-height:200px; overflow-y:auto;">
+          <ul id="modal-delete-items-list" class="list-unstyled mb-0" style="font-size:0.875rem;"></ul>
+        </div>
+        <!-- Cascade deletion warning -->
+        <div id="modal-delete-cascade" class="mt-3 text-start" style="display:none;">
+          <div class="alert alert-warning mb-0 py-2 px-3" style="font-size:0.8125rem;">
+            <strong><i class="fa-solid fa-link me-1"></i>Related records that will also be deleted:</strong>
+            <ul id="modal-delete-cascade-list" class="mb-0 mt-1"></ul>
+          </div>
+        </div>
+        <!-- Loading indicator -->
+        <div id="modal-delete-loading" class="mt-2" style="display:none;">
+          <div class="spinner-border spinner-border-sm text-muted" role="status"></div>
+          <span class="text-muted ms-1" style="font-size:0.8125rem;">Loading details...</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="w-100">
+          <div class="row">
+            <div class="col">
+              <a href="#" class="btn w-100" data-bs-dismiss="modal">Cancel</a>
+            </div>
+            <div class="col">
+              <button id="modal-delete-button" data-url="" class="btn btn-danger w-100">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Deferred: this script is in the body before jQuery/main.js <script> tags.
+// DOMContentLoaded fires after all blocking scripts have executed, so $ is available.
+document.addEventListener("DOMContentLoaded", function() {
+  function escapeHtml(text) {
+    var el = document.createElement("span");
+    el.textContent = text;
+    return el.innerHTML;
+  }
+
+  function extractIdentity(url) {
+    // URL pattern: /admin/{identity}/delete or /admin/{identity}/delete?pks=...
+    try {
+      var path = url.split("?")[0];
+      var parts = path.split("/").filter(Boolean);
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i] === "delete" && i > 0) {
+          return parts[i - 1];
+        }
+      }
+    } catch(e) {}
+    return "";
+  }
+
+  function resetEnhanced() {
+    $("#modal-delete-items").hide();
+    $("#modal-delete-items-list").empty();
+    $("#modal-delete-cascade").hide();
+    $("#modal-delete-cascade-list").empty();
+    $("#modal-delete-loading").hide();
+  }
+
+  // This handler runs AFTER sqladmin's default handler (main.js registers first).
+  // We overwrite the text set by main.js with our enhanced version.
+  $(document).on("shown.bs.modal", "#modal-delete", function(event) {
+    var element = $(event.relatedTarget);
+    var name, pk, deleteUrl;
+
+    if (element && element.length) {
+      // Single delete from list row or detail page
+      name = element.data("name");
+      pk = element.data("pk");
+      deleteUrl = element.data("url");
+    } else {
+      // Bulk delete — data was set on #action-delete by main.js
+      var actionEl = $("#action-delete");
+      name = actionEl.data("name");
+      pk = actionEl.data("pk");
+      deleteUrl = actionEl.data("url");
+    }
+
+    if (!name || !deleteUrl) return;
+
+    // Set delete button URL (also done by main.js, but ensure it's correct)
+    $("#modal-delete-button").attr("data-url", deleteUrl);
+
+    resetEnhanced();
+
+    var isBulk = Array.isArray(pk);
+    var pks = isBulk ? pk : (pk ? [pk] : []);
+    var pksStr = pks.join(",");
+
+    // Immediate fallback text (overwrites main.js's default)
+    if (isBulk && pks.length > 1) {
+      $("#modal-delete-text").text(
+        "Delete " + pks.length + " selected " + name + " record(s)?"
+      );
+    } else {
+      $("#modal-delete-text").text(
+        "Permanently delete this " + name + "?"
+      );
+    }
+
+    var identity = extractIdentity(deleteUrl);
+    if (!identity || pks.length === 0) return;
+
+    // Show loading spinner and fetch enhanced info
+    $("#modal-delete-loading").show();
+
+    $.ajax({
+      url: "/admin/delete-info?identity=" + encodeURIComponent(identity)
+           + "&pks=" + encodeURIComponent(pksStr),
+      method: "GET",
+      dataType: "json",
+      timeout: 5000,
+      success: function(data) {
+        $("#modal-delete-loading").hide();
+
+        // Upgrade text with human-readable label
+        if (!isBulk || pks.length === 1) {
+          if (data.items && data.items.length >= 1) {
+            var label = data.items[0].label;
+            $("#modal-delete-text").html(
+              "Permanently delete " + escapeHtml(name) +
+              " <strong>" + escapeHtml(label) + "</strong>?"
+            );
+          }
+        } else if (data.items && data.items.length > 0) {
+          // Bulk: show scrollable list of names
+          var $list = $("#modal-delete-items-list");
+          $list.empty();
+          data.items.forEach(function(item) {
+            $list.append(
+              $("<li>").addClass("py-1 border-bottom").html(
+                '<i class="fa-solid fa-circle fa-2xs text-danger me-2"></i>' +
+                escapeHtml(item.label)
+              )
+            );
+          });
+          $("#modal-delete-items").show();
+        }
+
+        // Show cascade warnings if any
+        if (data.cascade && data.cascade.length > 0) {
+          var $cascadeList = $("#modal-delete-cascade-list");
+          $cascadeList.empty();
+          data.cascade.forEach(function(c) {
+            $cascadeList.append(
+              $("<li>").text(c.count + " " + c.model)
+            );
+          });
+          $("#modal-delete-cascade").show();
+        }
+      },
+      error: function() {
+        // On failure, hide spinner — fallback text is already displayed
+        $("#modal-delete-loading").hide();
+      }
+    });
+  });
+});
+</script>
