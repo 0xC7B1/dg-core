@@ -803,8 +803,8 @@ async def test_transition_payload_requires_id_or_name():
 
 
 @pytest.mark.asyncio
-async def test_hybrid_resolution_by_session_region(db_session):
-    """Session with region_id resolves the player's patient in that region."""
+async def test_resolution_always_uses_active_patient_id(db_session):
+    """resolve_patient_for_event always resolves via GamePlayer.active_patient_id."""
     from app.domain import character, world as region_mod, session as session_mod
     from app.domain.resolution import resolve_patient_for_event
     from app.models.db_models import Game, GamePlayer, User
@@ -812,12 +812,11 @@ async def test_hybrid_resolution_by_session_region(db_session):
 
     db = db_session
 
-    # Setup
-    user = User(username="hybrid_user")
+    user = User(username="active_patient_user")
     db.add(user)
     await db.flush()
 
-    game = Game(name="HybridTest", created_by=user.id)
+    game = Game(name="ActivePatientTest", created_by=user.id)
     db.add(game)
     await db.flush()
 
@@ -831,77 +830,27 @@ async def test_hybrid_resolution_by_session_region(db_session):
     patient_a = await character.create_patient(db, user.id, game.id, "患者A", "C")
     patient_b = await character.create_patient(db, user.id, game.id, "患者B", "M")
 
-    # Place patients in different regions
+    # Place patients in different regions; active is still patient_a (first created)
     patient_a.current_region_id = region_a.id
     patient_b.current_region_id = region_b.id
     await db.flush()
-
-    # active_patient is A
     assert gp.active_patient_id == patient_a.id
 
-    # Start session in region B
+    # Even with a session in region B, should still resolve to active patient (A)
     session = await session_mod.start_session(db, game.id, user.id, region_id=region_b.id)
-
-    # Event with session_id should resolve to patient_b (in region B)
-    event = GameEvent(
+    event_with_session = GameEvent(
         game_id=game.id,
         user_id=user.id,
         session_id=session.id,
-        payload=EventCheckPayload(event_type="event_check", event_name="test", color="M"),
+        payload=EventCheckPayload(event_type="event_check", event_name="test", color="C"),
     )
-    resolved = await resolve_patient_for_event(db, event)
+    resolved = await resolve_patient_for_event(db, event_with_session)
     assert resolved is not None
-    assert resolved.id == patient_b.id
+    assert resolved.id == patient_a.id
 
-    # Event without session_id should resolve to active patient (A)
-    event_no_session = GameEvent(
-        game_id=game.id,
-        user_id=user.id,
-        payload=EventCheckPayload(event_type="event_check", event_name="test", color="C"),
-    )
-    resolved_fallback = await resolve_patient_for_event(db, event_no_session)
-    assert resolved_fallback is not None
-    assert resolved_fallback.id == patient_a.id
-
-
-@pytest.mark.asyncio
-async def test_session_region_rejects_wrong_region(db_session):
-    """Event in a session rejects if no patient is in the session's region."""
-    from app.domain import character, world as region_mod, session as session_mod
-    from app.domain.resolution import resolve_patient_for_event
-    from app.models.db_models import Game, GamePlayer, User
-    from app.models.event import GameEvent, EventCheckPayload
-
-    db = db_session
-
-    user = User(username="reject_user")
-    db.add(user)
+    # Switching active patient to B should change resolution
+    gp.active_patient_id = patient_b.id
     await db.flush()
-
-    game = Game(name="RejectTest", created_by=user.id)
-    db.add(game)
-    await db.flush()
-
-    gp = GamePlayer(game_id=game.id, user_id=user.id, role="PL")
-    db.add(gp)
-    await db.flush()
-
-    region_a = await region_mod.create_region(db, game.id, "区域A", "A")
-    region_b = await region_mod.create_region(db, game.id, "区域B", "B")
-
-    # Patient only in region A
-    patient_a = await character.create_patient(db, user.id, game.id, "患者A", "C")
-    patient_a.current_region_id = region_a.id
-    await db.flush()
-
-    # Session in region B — player has no patient there
-    session = await session_mod.start_session(db, game.id, user.id, region_id=region_b.id)
-
-    event = GameEvent(
-        game_id=game.id,
-        user_id=user.id,
-        session_id=session.id,
-        payload=EventCheckPayload(event_type="event_check", event_name="test", color="C"),
-    )
-    resolved = await resolve_patient_for_event(db, event)
-    assert resolved is None  # No patient in region B
+    resolved_b = await resolve_patient_for_event(db, event_with_session)
+    assert resolved_b is not None
+    assert resolved_b.id == patient_b.id

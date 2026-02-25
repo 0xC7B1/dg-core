@@ -5,31 +5,14 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db_models import GamePlayer, Ghost, Patient, Session
+from app.models.db_models import GamePlayer, Ghost, Patient
 from app.models.event import GameEvent
 
 
 async def resolve_patient_for_event(
     db: AsyncSession, event: GameEvent
 ) -> Patient | None:
-    """Hybrid character resolution: session region → patient, or fallback to active_patient_id."""
-    if event.session_id:
-        # Resolve by session region
-        session_result = await db.execute(
-            select(Session).where(Session.id == event.session_id)
-        )
-        session = session_result.scalar_one_or_none()
-        if session is not None and session.region_id is not None:
-            patient_result = await db.execute(
-                select(Patient).where(
-                    Patient.user_id == event.user_id,
-                    Patient.game_id == event.game_id,
-                    Patient.current_region_id == session.region_id,
-                )
-            )
-            return patient_result.scalar_one_or_none()
-
-    # Fallback: use active_patient_id from GamePlayer
+    """Resolve the active patient for an event via GamePlayer.active_patient_id."""
     gp_result = await db.execute(
         select(GamePlayer).where(
             GamePlayer.game_id == event.game_id,
